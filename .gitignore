@@ -19,4 +19,7 @@ models/*.pt
 models/*.onnx
 ml/models/**/weights/*.pt
 ml/models/**/weights/*.onnx
+ml/models/**/weights/*.tflite
+ml/models/**/weights/*.bin
+ml/models/**/weights/*.safetensors
 *.log
