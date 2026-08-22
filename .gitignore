@@ -23,3 +23,6 @@ ml/models/**/weights/*.tflite
 ml/models/**/weights/*.bin
 ml/models/**/weights/*.safetensors
 *.log
+# Production hawker model is tracked with Git LFS
+!ml/models/hawkers/weights/
+!ml/models/hawkers/weights/production.pt
