@@ -29,16 +29,16 @@ flowchart LR
 | Area | Owns | Does not own |
 | --- | --- | --- |
 | `apps/web` | Map, issue queue, verification, schedule, repair views | Detection or scoring rules |
-| `services/api` | Authentication boundary, request validation, domain commands, read models | Long-running model inference |
-| `services/worker` | Clip screening, temporal tracking, sensor fusion, clustering, scoring, repair checks | Browser UI or direct officer actions |
-| `packages/contracts` | Versioned event names, request/response shapes, status enums | Database migrations or business decisions |
-| `infra` | Local dependencies, deployment configuration, operational defaults | Product logic |
+| `frontend` | Map, issue queue, verification, schedule, repair views | Detection or scoring rules |
+| `backend` | Authentication boundary, request validation, domain commands, read models | Long-running model inference |
+| `ml` | Model training, independent hazard inference, tracking, fusion, clustering, severity | HTTP routes or officer actions |
+| `database` | SQL schema, indexes, seed fixtures | Application business logic |
 
 ## Processing lifecycle
 
 1. **Ingest:** accept a short evidence clip and synchronized GPS/IMU metadata. Store large media in object storage and metadata in PostgreSQL.
-2. **Screen:** run the model adapter on-device when available; the server worker supports the demo fallback. Upload only triggered clips in the MVP.
-3. **Track:** collapse consecutive frames from one trip into one observation event.
+2. **Screen:** run the selected hazard model on-device when available; the server worker supports the demo fallback. Upload only triggered clips in the MVP.
+3. **Detect and track:** independent pothole, crack, manhole, debris, or future obstruction models emit one common detection result, then consecutive frames from one trip are collapsed into one observation event.
 4. **Fuse:** combine vision confidence, impact evidence, and repeat observations into an evidence score.
 5. **Consolidate:** merge nearby events of the same defect type into a persistent defect using PostGIS distance and a time window.
 6. **Assess:** estimate severity and aggregate a road-segment health score.
@@ -102,8 +102,9 @@ The API should expose score components, confidence, source observations, and lif
 ## Implementation order
 
 1. Contracts, database schema, health endpoint, and observation ingestion.
-2. Seed data and defect list/map read model.
-3. Worker adapters for detection, fusion, clustering, and scoring.
+2. Pothole/crack detection, seed data, and defect list/map read model.
+3. Tracking, accelerometer fusion, clustering, and scoring.
 4. Officer verification workflow and audit events.
 5. Repair scheduling and post-repair validation.
-6. Car/bike sensor recordings, weather tags, metrics, and model evaluation.
+6. Fallen-tree and hawker adapters only after the road-defect path is validated.
+7. Car/bike sensor recordings, weather tags, metrics, and model evaluation.

@@ -7,16 +7,17 @@ Smart road-defect detection and maintenance prioritization for municipal teams.
 This repository is organized as a modular monorepo for the SIH26_90 Purple Hand Gang solution:
 
 ```text
-apps/
-	web/                 Next.js municipal dashboard
-services/
-	api/                 FastAPI application and public API boundary
-	worker/              Async detection, fusion, scoring, and verification jobs
-packages/
-	contracts/           Shared event and API contract definitions
+frontend/              Next.js municipal dashboard
+backend/               FastAPI application and public API boundary
+ml/                    Model training, inference, tracking, and fusion
+data/                  Raw, processed, and synthetic data boundaries
+database/              Schema and seed SQL
+scripts/               Dataset, demo-data, and database utilities
+notebooks/             Reproducible experiments and sensor analysis
+tests/                 Cross-layer automated tests
 infra/
-	docker/              Local infrastructure and deployment notes
 docs/
+                       Local infrastructure and deployment notes
 	architecture.md      System design and data flows
 ```
 
@@ -46,6 +47,8 @@ The system treats each observation as evidence. Multiple observations are merged
 - **Processing:** Python, YOLO model adapter, OpenCV, Redis-backed job queue
 - **Scheduling:** OR-Tools
 - **Operations:** Docker Compose locally; object storage for evidence clips and images
+
+The first release focuses on potholes, cracks, manholes, debris, and waterlogging. Fallen trees and hawkers are supported as future hazard-model extensions after the road-defect workflow is validated.
 
 See [docs/architecture.md](docs/architecture.md) for ownership boundaries, domain entities, processing stages, and the implementation order.
 
