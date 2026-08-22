@@ -1,0 +1,1 @@
+"""Select and run the model adapters needed for an input frame or clip."""

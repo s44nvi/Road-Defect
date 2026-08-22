@@ -17,4 +17,6 @@ data/raw/
 data/processed/
 models/*.pt
 models/*.onnx
+ml/models/**/weights/*.pt
+ml/models/**/weights/*.onnx
 *.log

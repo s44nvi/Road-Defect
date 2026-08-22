@@ -1,0 +1,4 @@
+name: hawkers
+classes:
+  - hawker
+weights: weights/production.pt

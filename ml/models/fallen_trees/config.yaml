@@ -1,0 +1,4 @@
+name: fallen_trees
+classes:
+  - fallen_tree
+weights: weights/production.pt

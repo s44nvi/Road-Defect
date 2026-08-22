@@ -1,0 +1,1 @@
+"""Inference adapter for fallen-tree hazards."""
