@@ -49,6 +49,23 @@ def create_report(report: ReportCreate, db: Session = Depends(get_db)):
     }
 
 
+@app.get("/defects", response_model=list[DefectResponse])
+def list_defects(db: Session = Depends(get_db)):
+    defects = db.query(Defect).all()
+
+    return [
+        {
+            "defect_id": defect.id,
+            "defect_type": defect.defect_type,
+            "defect_status": defect.defect_status,
+            "defect_severity": defect.defect_severity,
+            "latitude": defect.latitude,
+            "longitude": defect.longitude,
+        }
+        for defect in defects
+    ]
+
+
 @app.post("/road-intelligence/analyze", response_model=AnalyzeResponse)
 def analyze_defect(request: AnalyzeRequest) -> AnalyzeResponse:
     try:
