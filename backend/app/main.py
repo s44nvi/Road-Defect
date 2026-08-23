@@ -4,6 +4,10 @@ from sqlalchemy.orm import Session
 from .database import SessionLocal
 from .models import Defect
 from .schemas import ReportCreate, DefectResponse, DefectStatusUpdate
+from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse
+from .road_intelligence import service as road_intelligence_service
+from .road_intelligence.severity import InvalidDetectionError
+from .road_intelligence.scoring import InvalidContextError
 
 app = FastAPI(title="Road-Defect Backend")
 
@@ -43,6 +47,14 @@ def create_report(report: ReportCreate, db: Session = Depends(get_db)):
         "latitude": defect.latitude,
         "longitude": defect.longitude,
     }
+
+
+@app.post("/road-intelligence/analyze", response_model=AnalyzeResponse)
+def analyze_defect(request: AnalyzeRequest) -> AnalyzeResponse:
+    try:
+        return road_intelligence_service.analyze(request)
+    except (InvalidDetectionError, InvalidContextError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @app.patch("/defects/{defect_id}", response_model=DefectResponse)

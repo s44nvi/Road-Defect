@@ -1,0 +1,81 @@
+{
+  "severity": {
+    "score": 54.07,
+    "category": "High",
+    "breakdown": {
+      "defect_type_score": 0.95,
+      "confidence_score": 0.91,
+      "size_score": 0.0748,
+      "dimension_score": 0.2463,
+      "weighted_contributions": {
+        "defect_type": 0.3325,
+        "confidence": 0.1365,
+        "size": 0.0224,
+        "dimension": 0.0493
+      },
+      "data_flags": {
+        "size_estimated": false,
+        "dimension_estimated": false,
+        "defect_type_unmapped": false
+      }
+    }
+  },
+  "priority": {
+    "score": 41.33,
+    "breakdown": {
+      "severity": {
+        "raw_value": 54.07,
+        "normalized_value": 0.5407,
+        "weight": 0.443814,
+        "contribution": 0.23997,
+        "is_fallback": false
+      },
+      "size": {
+        "raw_value": 0.011224,
+        "normalized_value": 0.0748,
+        "weight": 0.164508,
+        "contribution": 0.012305,
+        "is_fallback": false
+      },
+      "traffic_criticality": {
+        "raw_value": 0.75,
+        "normalized_value": 0.75,
+        "weight": 0.164508,
+        "contribution": 0.123381,
+        "is_fallback": false
+      },
+      "recurrence": {
+        "raw_value": 3.0,
+        "normalized_value": 0.6,
+        "weight": 0.062661,
+        "contribution": 0.037596,
+        "is_fallback": false
+      },
+      "location_criticality": {
+        "raw_value": null,
+        "normalized_value": 0.0,
+        "weight": 0.164508,
+        "contribution": 0.0,
+        "is_fallback": true
+      }
+    },
+    "ahp": {
+      "criteria": [
+        "severity",
+        "size",
+        "traffic_criticality",
+        "recurrence",
+        "location_criticality"
+      ],
+      "weights": {
+        "severity": 0.44381411876197796,
+        "size": 0.16450845411814266,
+        "traffic_criticality": 0.16450845411814266,
+        "recurrence": 0.06266051888359411,
+        "location_criticality": 0.16450845411814266
+      },
+      "consistency_ratio": 0.009366,
+      "is_consistent": true
+    }
+  }
+}

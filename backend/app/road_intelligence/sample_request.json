@@ -1,0 +1,22 @@
+{
+  "detection": {
+    "class_id": 0,
+    "class_name": "pothole",
+    "confidence": 0.91,
+    "bbox": [
+      412.0,
+      610.0,
+      587.0,
+      743.0
+    ],
+    "image_width": 1920,
+    "image_height": 1080
+  },
+  "context": {
+    "latitude": 19.076,
+    "longitude": 72.8777,
+    "timestamp": "2026-08-23T09:15:00Z",
+    "road_type": "arterial",
+    "recurrence_count": 3
+  }
+}
