@@ -1,0 +1,7 @@
+name: pothole_crack
+classes:
+  - pothole
+  - crack
+  - manhole
+  - debris
+weights: weights/production.pt

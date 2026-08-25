@@ -1,0 +1,1 @@
+"""Inference adapter for potholes, cracks, manholes, and debris."""

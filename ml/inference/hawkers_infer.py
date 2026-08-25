@@ -1,0 +1,1 @@
+"""Inference adapter for hawker hazards."""

@@ -1,0 +1,1 @@
+"""Consolidate detections across adjacent frames."""

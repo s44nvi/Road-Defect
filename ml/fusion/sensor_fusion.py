@@ -1,0 +1,1 @@
+"""Combine accelerometer evidence with vision confidence."""
