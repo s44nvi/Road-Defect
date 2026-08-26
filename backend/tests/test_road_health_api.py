@@ -32,6 +32,28 @@ def test_segments_endpoint_returns_a_valid_feature_collection(client, make_segme
     assert len(body["features"]) == 2
 
 
+def test_segments_endpoint_filters_by_geometry_source(client, make_segment):
+    make_segment(
+        "SEG-DEV", SIMPLE_LINE, length_km=2.0, road_name="Dev Road",
+        geometry_source="dev_approximate_v1",
+    )
+    make_segment(
+        "SEG-MCGM", SIMPLE_LINE, length_km=2.0, road_name="MCGM Road",
+        geometry_source="mcgm_demo_csv_v1",
+    )
+
+    # No filter: both segments, unchanged from before this param existed.
+    unfiltered = client.get("/road-health/segments").json()
+    assert len(unfiltered["features"]) == 2
+
+    # Filtered: only the MCGM one, nothing deleted/hidden from the other call.
+    filtered = client.get(
+        "/road-health/segments", params={"geometry_source": "mcgm_demo_csv_v1"}
+    ).json()
+    assert len(filtered["features"]) == 1
+    assert filtered["features"][0]["properties"]["segment_id"] == "SEG-MCGM"
+
+
 def test_every_feature_has_linestring_geometry(client, make_segment):
     make_segment("SEG-A", SIMPLE_LINE, length_km=2.0)
 

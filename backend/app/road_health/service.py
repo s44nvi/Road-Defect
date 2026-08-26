@@ -156,14 +156,25 @@ def build_feature(db: Session, segment: RoadSegment) -> dict:
     }
 
 
-def build_feature_collection(db: Session) -> dict:
+def build_feature_collection(db: Session, geometry_source: str | None = None) -> dict:
     """
     `GET /road-health/segments` payload.
 
     Segments whose stored geometry is unusable are skipped rather than failing
     the whole collection -- one bad import must not blank the officer's map.
+
+    `geometry_source` is an optional exact-match filter (e.g.
+    'mcgm_demo_csv_v1') so a caller can ask for just one provenance's
+    segments -- the MCGM demo roads, say -- without a second endpoint and
+    without hiding/deleting any other segment. Omitted, this returns every
+    segment exactly as before.
     """
-    segments = db.query(RoadSegment).order_by(RoadSegment.segment_id).all()
+    query = db.query(RoadSegment)
+
+    if geometry_source is not None:
+        query = query.filter(RoadSegment.geometry_source == geometry_source)
+
+    segments = query.order_by(RoadSegment.segment_id).all()
 
     features = []
 
