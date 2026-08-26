@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .road_health.config import ALL_STATUSES
@@ -199,22 +201,97 @@ class DefectDetailResponse(BaseModel):
     defectSeverity: str
     roadSegmentId: str | None = None
 
+    # AI detection metadata (populated for defects created through the
+    # analyze/submit or /reports/image pipelines; None for JSON-only or
+    # legacy reports -- never fabricated).
+    ai_confidence: float | None = None
+    ai_bbox: list[float] | None = None
+    ai_severity_score: float | None = None
+    defect_priority: float | None = None
+    image_path: str | None = None
+    image_url: str | None = None
+    # Timeline: when the "reported" status entry was written, converted to
+    # IST for display (see timezone_utils.to_ist). None only for defects
+    # with no status history at all (should not happen in practice, since
+    # every creation path calls record_initial_status).
+    reported_at: datetime | None = None
+
+    aiConfidence: float | None = None
+    aiBbox: list[float] | None = None
+    aiSeverityScore: float | None = None
+    defectPriority: float | None = None
+    imagePath: str | None = None
+    imageUrl: str | None = None
+    reportedAt: datetime | None = None
+
 
 class ImageReportResponse(DefectDetailResponse):
     """
     Response of `POST /reports/image`.
 
     A superset of `DefectDetailResponse` (itself a superset of
-    `DefectResponse`), adding the fields that only exist for defects created
-    through the image/detector pipeline: the AHP priority score and the
-    stored source image path.
+    `DefectResponse`). `defect_priority`/`image_path` etc. now live directly
+    on `DefectDetailResponse` (added for the officer detail view), so this
+    subclass exists only for backwards-compat naming/import stability.
     """
 
-    defect_priority: float | None = None
-    image_path: str | None = None
 
-    defectPriority: float | None = None
-    imagePath: str | None = None
+class AnalyzeImageResponse(BaseModel):
+    """
+    Response of `POST /reports/analyze`.
+
+    Pure AI analysis -- no `Defect` row is created by this endpoint. Returns
+    the real detected category (never a fabricated default) and a reference
+    token the citizen's final `POST /reports/submit` call uses to reuse the
+    already-persisted image without re-uploading it.
+
+    `category`/`confidence`/`bbox` are all `None` together when nothing was
+    confidently detected -- an explicit "no detection" result, not a guess.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    image_token: str
+    category: str | None = None
+    confidence: float | None = None
+    bbox: list[float] | None = None
+    ai_severity: str | None = None
+    ai_severity_score: float | None = None
+    model_source: str | None = None
+
+    imageToken: str
+    aiSeverity: str | None = None
+    aiSeverityScore: float | None = None
+    modelSource: str | None = None
+
+
+class SubmitReportRequest(BaseModel):
+    """
+    Body of `POST /reports/submit`.
+
+    `image_token` must reference an image already persisted by a prior
+    `POST /reports/analyze` call. `defect_type`/`defect_severity` are the
+    citizen's final chosen category/severity (which may differ from the AI
+    suggestion returned by `/analyze` -- the citizen has the final say).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    image_token: str = Field(alias="imageToken")
+    latitude: float
+    longitude: float
+    defect_type: str = Field(alias="defectType")
+    defect_severity: str = Field(alias="defectSeverity")
+
+    @field_validator("defect_severity")
+    @classmethod
+    def _normalize_severity(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_SEVERITIES:
+            raise ValueError(
+                f"defect_severity must be one of: {', '.join(ALLOWED_SEVERITIES)}"
+            )
+        return normalized
 
 
 class HawkerDetectionItem(BaseModel):

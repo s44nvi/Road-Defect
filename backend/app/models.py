@@ -75,6 +75,15 @@ class Defect(Base):
     # Uploaded source image.
     image_path = Column(String, nullable=True)
 
+    # AI detection metadata, populated by the analyze/submit pipeline
+    # (POST /reports/analyze + POST /reports/submit). Nullable: not every
+    # Defect is created from an AI-analyzed image (e.g. POST /reports,
+    # legacy seed data), so these stay optional rather than backfilled.
+    ai_confidence = Column(Float, nullable=True)
+    ai_bbox = Column(JSON, nullable=True)
+    ai_severity_score = Column(Float, nullable=True)
+    ai_model_source = Column(String, nullable=True)
+
     # Development/test data marker.
     is_test_data = Column(
         Boolean,

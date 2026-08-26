@@ -150,7 +150,31 @@ class YoloPotholeDetector:
             self._model = YOLO(str(self._weights_path))
         return self._model
 
+    # RDD codes this checkpoint also emits and that this class maps to the
+    # human-readable "crack" label for arbitration purposes (see
+    # `arbitration.py`). Not used by `detect()` (kept pothole-only, for
+    # backwards compatibility with `POST /reports/image`) -- only by
+    # `detect_supported()`.
+    _CRACK_SOURCE_LABELS = frozenset({"D00", "D01", "D10", "D11", "D20"})
+    _CRACK_OUTPUT_CLASS_NAME = "crack"
+
     def detect(self, image_path: str | Path) -> list[NormalizedDetection]:
+        return [
+            d
+            for d in self._run(image_path)
+            if d.class_name == self._OUTPUT_CLASS_NAME
+        ]
+
+    def detect_supported(self, image_path: str | Path) -> list[NormalizedDetection]:
+        """
+        Like `detect()`, but also surfaces `best.pt`'s "crack" class
+        (RDD codes D00/D01/D10/D11/D20), for the dual-model arbitration
+        pipeline (`arbitration.py`). `detect()` itself stays pothole-only
+        and unchanged, so `POST /reports/image` behavior is unaffected.
+        """
+        return self._run(image_path)
+
+    def _run(self, image_path: str | Path) -> list[NormalizedDetection]:
         model = self._get_model()
         results = model(str(image_path))
 
@@ -160,14 +184,18 @@ class YoloPotholeDetector:
             for box in result.boxes:
                 raw_class_id = int(box.cls[0])
                 raw_class_name = model.names[raw_class_id]
-                if raw_class_name != self._POTHOLE_SOURCE_LABEL:
-                    continue  # non-pothole road-damage class; out of scope for PotholeDetector
+                if raw_class_name == self._POTHOLE_SOURCE_LABEL:
+                    output_class_name = self._OUTPUT_CLASS_NAME
+                elif raw_class_name in self._CRACK_SOURCE_LABELS:
+                    output_class_name = self._CRACK_OUTPUT_CLASS_NAME
+                else:
+                    continue  # unmapped/unsupported road-damage class
 
                 x1, y1, x2, y2 = box.xyxy[0].tolist()
                 detections.append(
                     NormalizedDetection(
                         class_id=raw_class_id,
-                        class_name=self._OUTPUT_CLASS_NAME,
+                        class_name=output_class_name,
                         confidence=round(float(box.conf[0]), 4),
                         bbox_xyxy=(round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)),
                         image_width=int(image_width),
@@ -176,6 +204,103 @@ class YoloPotholeDetector:
                     )
                 )
         return detections
+
+
+class YoloPotholeDetectorV2:
+    """
+    Second, pothole-specific model: `best2.pt`, a YOLO26s checkpoint trained
+    on the "Multi-Weather Pothole Detection" (MWPD) dataset, single class
+    `pothole` (see `yolo26s_mwpd_v1_handoff/README.md`, extracted from the
+    handoff bundle -- not committed to the repo, summarized here):
+
+        val mAP50 0.75 / mAP50-95 0.36, precision 0.82, recall 0.68
+        (held-out test: mAP50 0.70, precision 0.78, recall 0.65)
+
+    Known limitation (from the README): trained with zero background
+    images, so precision figures are optimistic (no clean-road negatives),
+    and it misses ~35% of real potholes (recall 0.65 on held-out test),
+    especially small/distant ones. It is deliberately treated as
+    "authoritative but not infallible" by `arbitration.py`, not as ground
+    truth.
+
+    A fresh `YOLO()` instance is constructed per `detect()` call rather than
+    reused, per the handoff README: "Construct a fresh `YOLO()` per
+    operation -- val, predict and export each fuse the model in place and a
+    reused instance raises `KeyError: 'feats'`." This differs from
+    `YoloPotholeDetector`'s load-once pattern for that reason.
+    """
+
+    OUTPUT_CLASS_NAME = "pothole"
+    MODEL_SOURCE = "yolo26s-best2.pt-mwpd-pothole-v1"
+
+    def __init__(self, weights_path: str | Path | None = None) -> None:
+        self._weights_path = (
+            Path(weights_path)
+            if weights_path is not None
+            else Path(__file__).resolve().parent / "best2.pt"
+        )
+
+    def detect(self, image_path: str | Path) -> list[NormalizedDetection]:
+        from ultralytics import YOLO  # local import: avoid requiring torch/ultralytics just to import this module
+
+        # Fresh instance per call -- see class docstring (handoff README
+        # warns a reused instance raises KeyError: 'feats').
+        model = YOLO(str(self._weights_path))
+        results = model(str(image_path), conf=0.001)  # collect everything; arbitration applies the real threshold
+
+        detections: list[NormalizedDetection] = []
+        for result in results:
+            image_height, image_width = result.orig_shape
+            for box in result.boxes:
+                raw_class_id = int(box.cls[0])
+                raw_class_name = model.names[raw_class_id]
+                if raw_class_name != self.OUTPUT_CLASS_NAME:
+                    continue  # this checkpoint is single-class, but stay defensive
+
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                detections.append(
+                    NormalizedDetection(
+                        class_id=raw_class_id,
+                        class_name=self.OUTPUT_CLASS_NAME,
+                        confidence=round(float(box.conf[0]), 4),
+                        bbox_xyxy=(round(x1, 2), round(y1, 2), round(x2, 2), round(y2, 2)),
+                        image_width=int(image_width),
+                        image_height=int(image_height),
+                        model_source=self.MODEL_SOURCE,
+                    )
+                )
+        return detections
+
+
+class DualPotholeDetector:
+    """
+    `PotholeDetector` implementation used by `POST /reports/analyze` and
+    `POST /reports/submit`: runs BOTH `best.pt` (v1) and `best2.pt` (v2) and
+    arbitrates between them via `arbitration.arbitrate_pothole_detections`
+    (class-semantics-based, not a raw-confidence comparison -- see that
+    module's docstring).
+
+    `POST /reports/image` deliberately keeps using the plain, single-model
+    `YoloPotholeDetector` (unchanged) for backwards compatibility; this dual
+    detector is additive, not a replacement of the existing wiring.
+    """
+
+    def __init__(
+        self,
+        v1: YoloPotholeDetector | None = None,
+        v2: YoloPotholeDetectorV2 | None = None,
+    ) -> None:
+        self._v1 = v1 if v1 is not None else YoloPotholeDetector()
+        self._v2 = v2 if v2 is not None else YoloPotholeDetectorV2()
+
+    def detect(self, image_path: str | Path) -> list[NormalizedDetection]:
+        from .arbitration import arbitrate_pothole_detections
+
+        v1_detections = self._v1.detect_supported(image_path)
+        v2_detections = self._v2.detect(image_path)
+
+        winner = arbitrate_pothole_detections(v1_detections, v2_detections)
+        return [winner] if winner is not None else []
 
 
 def get_default_detector() -> PotholeDetector:
@@ -195,3 +320,19 @@ def get_default_detector() -> PotholeDetector:
 
 
 _default_detector: PotholeDetector | None = None
+
+
+def get_default_dual_detector() -> PotholeDetector:
+    """
+    FastAPI dependency factory for the dual-model (`best.pt` + `best2.pt`)
+    arbitrated detector, used by `POST /reports/analyze` and
+    `POST /reports/submit`. Separate singleton from `get_default_detector()`
+    so `POST /reports/image` keeps its original single-model behavior.
+    """
+    global _default_dual_detector
+    if _default_dual_detector is None:
+        _default_dual_detector = DualPotholeDetector()
+    return _default_dual_detector
+
+
+_default_dual_detector: PotholeDetector | None = None
