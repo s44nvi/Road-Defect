@@ -25,7 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from . import config
-from .geo import InvalidGeometryError, parse_linestring, point_to_linestring_distance_km
+from .geo import InvalidGeometryError, parse_geometry_parts, point_to_geometry_distance_km
 
 
 @dataclass(frozen=True)
@@ -68,13 +68,13 @@ def find_nearest_segment(
 
     for segment in segments:
         try:
-            coordinates = parse_linestring(segment.geometry)
+            parts = parse_geometry_parts(segment.geometry)
         except InvalidGeometryError:
             # A segment with unusable geometry is skipped rather than
             # crashing an import of thousands of defects.
             continue
 
-        distance = point_to_linestring_distance_km(latitude, longitude, coordinates)
+        distance = point_to_geometry_distance_km(latitude, longitude, parts)
 
         # Strict `<` plus the segment_id tie-break keeps this deterministic
         # regardless of the order rows come back from the database.

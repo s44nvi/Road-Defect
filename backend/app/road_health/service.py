@@ -18,7 +18,7 @@ from sqlalchemy.orm import Session
 from ..models import Defect, RoadSegment
 from . import scoring
 from .assignment import SegmentGeometry, find_nearest_segment
-from .geo import InvalidGeometryError, parse_linestring
+from .geo import InvalidGeometryError, linestring, multi_linestring, parse_geometry_parts
 from .scoring import DefectLoad, HealthResult
 
 
@@ -31,10 +31,22 @@ def _segment_label(segment: RoadSegment) -> str:
 
 
 def _geometry_payload(segment: RoadSegment) -> dict:
-    """Validate stored geometry and return it as a GeoJSON geometry object."""
-    coordinates = parse_linestring(segment.geometry)
+    """
+    Validate stored geometry and return it as a GeoJSON geometry object.
 
-    return {"type": "LineString", "coordinates": coordinates}
+    Round-trips as a LineString for single-part geometry (the historical
+    dev/OSM shape) and as a MultiLineString when the segment genuinely has
+    more than one disconnected part (e.g. real MCGM demo roads) -- see
+    `geo.parse_geometry_parts`. Never merges multiple parts into one
+    LineString: that would draw a connecting line the source geometry does
+    not have.
+    """
+    parts = parse_geometry_parts(segment.geometry)
+
+    if len(parts) == 1:
+        return linestring(parts[0])
+
+    return multi_linestring(parts)
 
 
 def load_segment_defects(db: Session, segment: RoadSegment) -> list[Defect]:
@@ -106,6 +118,10 @@ def _properties(segment: RoadSegment, health: HealthResult, status_counts: dict[
         "confirmed_issues": status_counts["confirmed"],
         "in_progress_issues": status_counts["in_progress"],
         "geometry_source": segment.geometry_source,
+        "mcgm_id": segment.mcgm_id,
+        "ward": segment.ward,
+        "work_status": segment.work_status,
+        "source_length_m": segment.source_length_m,
         # camelCase mirror for the existing frontend contract
         "segmentId": segment.segment_id,
         "roadName": segment.road_name,
@@ -118,6 +134,9 @@ def _properties(segment: RoadSegment, health: HealthResult, status_counts: dict[
         "resolvedIssues": health.resolved_issues,
         "criticalCount": health.critical_issues,
         "mediumCount": health.medium_issues,
+        "mcgmId": segment.mcgm_id,
+        "workStatus": segment.work_status,
+        "sourceLengthM": segment.source_length_m,
         "lowCount": health.low_issues,
         "reportedIssues": status_counts["reported"],
         "confirmedIssues": status_counts["confirmed"],
