@@ -23,12 +23,24 @@ router = APIRouter(prefix="/road-health", tags=["road-health"])
 
 
 @router.get("/segments", response_model=SegmentFeatureCollection)
-def list_segment_health(db: Session = Depends(get_db)) -> dict:
+def list_segment_health(
+    geometry_source: str | None = None,
+    db: Session = Depends(get_db),
+) -> dict:
     """
     Road health for every segment, as a GeoJSON FeatureCollection the officer
     frontend can draw directly.
+
+        GET /road-health/segments
+        GET /road-health/segments?geometry_source=mcgm_demo_csv_v1
+
+    `geometry_source` is optional; omitted, this returns every segment
+    regardless of provenance (dev/OSM/MCGM), unchanged from before. Pass it
+    to scope the response to one provenance -- e.g. the demo frontend can
+    request just the 10 real MCGM roads without a second endpoint and
+    without any segment being hidden/deleted from the underlying data.
     """
-    return service.build_feature_collection(db)
+    return service.build_feature_collection(db, geometry_source=geometry_source)
 
 
 @router.get("/segments/{segment_id}", response_model=SegmentDetail)
