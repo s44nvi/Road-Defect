@@ -75,6 +75,99 @@ def linestring(coordinates: Coordinates) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# MultiLineString support
+# ---------------------------------------------------------------------------
+# Real-world road source data (e.g. the MCGM demo CSV) sometimes supplies a
+# road as a MultiLineString with genuinely disconnected parts (a road split
+# by a junction, a gap in the survey, etc). The rest of this module works in
+# terms of a plain list of `Coordinates` "parts" -- a LineString is just the
+# one-part case -- so callers never have to special-case the two GeoJSON
+# geometry types, and a disconnected part is never bridged with an invented
+# straight line just to force it into a single LineString.
+def parse_multilinestring(geometry: object) -> list[Coordinates]:
+    """
+    Validate a GeoJSON MultiLineString mapping and return its parts.
+
+    Each part is validated exactly like `parse_linestring` validates a bare
+    LineString's coordinates. Parts are returned in their original order and
+    are NEVER merged/reordered/bridged here -- that would fabricate geometry
+    that was not in the source.
+    """
+    if not isinstance(geometry, dict):
+        raise InvalidGeometryError("geometry must be a GeoJSON object")
+
+    if geometry.get("type") != "MultiLineString":
+        raise InvalidGeometryError(
+            f"unsupported geometry type {geometry.get('type')!r}; expected MultiLineString"
+        )
+
+    parts = geometry.get("coordinates")
+
+    if not isinstance(parts, list) or len(parts) < 1:
+        raise InvalidGeometryError("MultiLineString needs at least 1 part")
+
+    return [
+        parse_linestring({"type": "LineString", "coordinates": part})
+        for part in parts
+    ]
+
+
+def multi_linestring(parts: list[Coordinates]) -> dict:
+    """Wrap a list of coordinate lists into a GeoJSON MultiLineString geometry object."""
+    return {
+        "type": "MultiLineString",
+        "coordinates": [[[c[0], c[1]] for c in part] for part in parts],
+    }
+
+
+def parse_geometry_parts(geometry: object) -> list[Coordinates]:
+    """
+    Validate ANY supported geometry (LineString or MultiLineString) and
+    return it as a list of one or more parts.
+
+    This is the single entry point the rest of Road Health (assignment,
+    length, GeoJSON passthrough) should use instead of `parse_linestring`
+    directly, so both geometry types are handled uniformly.
+    """
+    if not isinstance(geometry, dict):
+        raise InvalidGeometryError("geometry must be a GeoJSON object")
+
+    geometry_type = geometry.get("type")
+
+    if geometry_type == "LineString":
+        return [parse_linestring(geometry)]
+
+    if geometry_type == "MultiLineString":
+        return parse_multilinestring(geometry)
+
+    raise InvalidGeometryError(
+        f"unsupported geometry type {geometry_type!r}; expected LineString or MultiLineString"
+    )
+
+
+def total_length_km(parts: list[Coordinates]) -> float:
+    """
+    Sum of each part's own length.
+
+    Deliberately NOT the length of a single polyline drawn through all
+    parts -- for a genuinely disconnected MultiLineString (see
+    `parse_multilinestring`) there is no real edge between the parts, so
+    summing each part's independent length is the only measurement that
+    does not fabricate a connecting distance.
+    """
+    return sum(linestring_length_km(part) for part in parts)
+
+
+def point_to_geometry_distance_km(
+    lat: float,
+    lon: float,
+    parts: list[Coordinates],
+) -> float:
+    """Shortest distance from a point to any part of a (possibly multi-part) geometry."""
+    return min(point_to_linestring_distance_km(lat, lon, part) for part in parts)
+
+
+# ---------------------------------------------------------------------------
 # Distance
 # ---------------------------------------------------------------------------
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:

@@ -184,3 +184,9 @@ EARTH_RADIUS_KM: float = 6371.0088
 # corridors are APPROXIMATE DEVELOPMENT GEOMETRY, not surveyed/OSM data.
 GEOMETRY_SOURCE_DEV: str = "dev_approximate_v1"
 GEOMETRY_SOURCE_OSM: str = "osm_overpass"
+
+# Real MCGM (Mumbai civic) road geometry from the curated demo CSV
+# (demo_roads.csv). Distinct from both of the above: it is neither
+# hand-authored approximate geometry nor an OSM extract -- it is the
+# municipal authority's own road-works record, WKT geometry included.
+GEOMETRY_SOURCE_MCGM_DEMO: str = "mcgm_demo_csv_v1"

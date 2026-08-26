@@ -32,10 +32,30 @@ class RoadSegment(Base):
     segment_label = Column(String(255), nullable=True)
 
     # Provenance of `geometry` -- 'dev_approximate_v1' for the bundled
-    # development corridors, 'osm_overpass' for real imported OSM ways. Kept on
-    # the row so approximate geometry can never be mistaken for surveyed data.
+    # development corridors, 'osm_overpass' for real imported OSM ways,
+    # 'mcgm_demo_csv_v1' for the real MCGM demo road CSV. Kept on the row so
+    # approximate geometry can never be mistaken for surveyed/municipal data.
     # See road_health/data/README.md.
     geometry_source = Column(String(100), nullable=True)
+
+    # --- MCGM source metadata (nullable: only populated for segments
+    # imported from the MCGM demo CSV by
+    # backend/scripts/import_demo_roads.py; dev/OSM segments leave these
+    # NULL) ------------------------------------------------------------
+    # The MCGM record's own `id` column -- the stable external key the
+    # importer upserts on, distinct from our own `segment_id` naming scheme.
+    mcgm_id = Column(String(50), nullable=True, index=True)
+    ward = Column(String(50), nullable=True)
+    # MCGM's own road-work status string (e.g. "Work In Progress"). This is
+    # municipal work-order status, NOT `Defect.defect_status` -- it never
+    # feeds Road Health scoring (see road_health/config.py).
+    work_status = Column(String(100), nullable=True)
+    # The CSV's own `length_of_road_m`, preserved as source metadata. Kept
+    # separate from `length_km` (which Road Health scoring uses, and which
+    # is always derived from the actual geometry -- see
+    # backend/scripts/import_demo_roads.py for why the two numbers can
+    # legitimately disagree for this dataset).
+    source_length_m = Column(Float, nullable=True)
 
     defects = relationship("Defect", back_populates="road_segment")
 

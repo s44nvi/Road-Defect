@@ -22,6 +22,7 @@ the wire names.
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,6 +34,28 @@ class LineStringGeometry(BaseModel):
     coordinates: list[list[float]] = Field(
         description="[[longitude, latitude], ...] in WGS84 degrees",
     )
+
+
+class MultiLineStringGeometry(BaseModel):
+    """
+    GeoJSON MultiLineString -- one road made of two or more genuinely
+    disconnected parts (e.g. a real gap in the source MCGM survey). Each
+    part is its own real, unaltered polyline; nothing here ever bridges
+    parts with an invented connecting line. See
+    `road_health.geo.parse_multilinestring`.
+    """
+
+    type: str = Field(default="MultiLineString", examples=["MultiLineString"])
+    coordinates: list[list[list[float]]] = Field(
+        description="A list of parts, each [[longitude, latitude], ...] in WGS84 degrees",
+    )
+
+
+# A segment's geometry is either shape. Discriminated by the `type` field
+# when read back (FastAPI/pydantic try LineString first, then
+# MultiLineString) -- callers that only ever handled LineString before need
+# no changes, since single-part geometry still round-trips as LineString.
+SegmentGeometry = Union[LineStringGeometry, MultiLineStringGeometry]
 
 
 class SegmentProperties(BaseModel):
@@ -67,6 +90,11 @@ class SegmentProperties(BaseModel):
     confirmed_issues: int
     in_progress_issues: int
     geometry_source: str | None = None
+    # --- MCGM source metadata (None for dev/OSM segments) --------------------
+    mcgm_id: str | None = None
+    ward: str | None = None
+    work_status: str | None = None
+    source_length_m: float | None = None
 
     # --- camelCase mirror for the existing officer frontend ------------------
     segmentId: str
@@ -84,13 +112,16 @@ class SegmentProperties(BaseModel):
     reportedIssues: int
     confirmedIssues: int
     inProgressIssues: int
+    mcgmId: str | None = None
+    workStatus: str | None = None
+    sourceLengthM: float | None = None
 
 
 class SegmentFeature(BaseModel):
     """One GeoJSON Feature: road geometry plus its health properties."""
 
     type: str = Field(default="Feature", examples=["Feature"])
-    geometry: LineStringGeometry
+    geometry: SegmentGeometry
     properties: SegmentProperties
 
 
@@ -131,9 +162,13 @@ class SegmentDetail(BaseModel):
     segment_id: str
     road_name: str
     segment_label: str
-    geometry: LineStringGeometry
+    geometry: SegmentGeometry
     length_km: float
     geometry_source: str | None
+    mcgm_id: str | None = None
+    ward: str | None = None
+    work_status: str | None = None
+    source_length_m: float | None = None
     health_score: float
     health_status: str
     health_color: str
@@ -167,6 +202,9 @@ class SegmentDetail(BaseModel):
     reportedIssues: int
     confirmedIssues: int
     inProgressIssues: int
+    mcgmId: str | None = None
+    workStatus: str | None = None
+    sourceLengthM: float | None = None
 
 
 class StatusHistoryEntry(BaseModel):
