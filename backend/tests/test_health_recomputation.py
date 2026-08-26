@@ -31,7 +31,7 @@ def test_an_active_defect_degrades_the_segments_health(client, make_segment, mak
 
 
 def test_resolving_a_defect_through_the_api_improves_the_segments_health(
-    client, make_segment, make_defect
+    client, officer_client, make_segment, make_defect
 ):
     segment = make_segment("SEG-A", LINE, length_km=2.0)
     defect = make_defect(19.0, 72.805, severity="critical", status="reported", segment=segment)
@@ -43,7 +43,7 @@ def test_resolving_a_defect_through_the_api_improves_the_segments_health(
     # Walk the real workflow to 'resolved' rather than writing the status
     # directly, so this exercises the same path an officer would use.
     for status in ["confirmed", "confirmed", "in_progress", "in_progress", "resolved"]:
-        response = client.patch(f"/defects/{defect.id}/status", json={"status": status})
+        response = officer_client.patch(f"/defects/{defect.id}/status", json={"status": status})
         assert response.status_code == 200
 
     recovered = _segment_properties(client, "SEG-A")
@@ -56,12 +56,12 @@ def test_resolving_a_defect_through_the_api_improves_the_segments_health(
 
 
 def test_rejecting_a_defect_also_removes_it_from_active_degradation(
-    client, make_segment, make_defect
+    client, officer_client, make_segment, make_defect
 ):
     segment = make_segment("SEG-A", LINE, length_km=2.0)
     defect = make_defect(19.0, 72.805, severity="critical", status="reported", segment=segment)
 
-    assert client.patch(f"/defects/{defect.id}/status", json={"status": "rejected"}).status_code == 200
+    assert officer_client.patch(f"/defects/{defect.id}/status", json={"status": "rejected"}).status_code == 200
 
     result = _segment_properties(client, "SEG-A")
 

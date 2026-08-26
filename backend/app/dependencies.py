@@ -16,6 +16,7 @@ from typing import Iterator
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal
+from .ml.potholes.detector import PotholeDetector, get_default_detector
 
 
 def get_db() -> Iterator[Session]:
@@ -24,3 +25,15 @@ def get_db() -> Iterator[Session]:
         yield db
     finally:
         db.close()
+
+
+def get_pothole_detector() -> PotholeDetector:
+    """
+    FastAPI dependency for the pothole detector integration boundary.
+
+    Returns the placeholder (`UnavailablePotholeDetector`) until Harmeet's
+    real model is wired into `app.ml.potholes.detector.get_default_detector`.
+    Tests override this dependency with a mock to exercise the pipeline
+    without a real model artifact.
+    """
+    return get_default_detector()

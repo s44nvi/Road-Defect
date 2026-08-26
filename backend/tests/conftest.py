@@ -73,6 +73,80 @@ def client(db_session):
 
 
 @pytest.fixture()
+def dev_officer(db_session):
+    """
+    A single active officer row, for tests that need a real authenticated
+    principal. Password is hashed exactly the way `seed_dev_officer.py` and
+    `POST /auth/officer/login` do -- no plaintext ever touches the row.
+    """
+    from backend.app.auth.security import hash_password
+    from backend.app.models import Officer
+
+    officer = Officer(
+        name="Test Officer",
+        email="officer@example.com",
+        password_hash=hash_password("correct-horse-battery-staple"),
+        department="Test Municipality",
+        is_active=True,
+    )
+
+    db_session.add(officer)
+    db_session.commit()
+    db_session.refresh(officer)
+
+    return officer
+
+
+@pytest.fixture()
+def officer_token(dev_officer):
+    """A valid access token for `dev_officer`."""
+    from backend.app.auth.service import issue_officer_token
+
+    return issue_officer_token(dev_officer)
+
+
+@pytest.fixture()
+def officer_client(client, officer_token):
+    """
+    The shared `client` fixture, pre-authenticated as `dev_officer` via a
+    bearer token on every request. Existing tests that exercise officer-only
+    routes (PATCH /defects/{id}, PATCH /defects/{id}/status) use this
+    instead of the bare `client` fixture now that those routes require
+    authentication; tests of public routes are unaffected.
+    """
+    client.headers.update({"Authorization": f"Bearer {officer_token}"})
+    return client
+
+
+@pytest.fixture()
+def dev_citizen(db_session):
+    """A single active citizen row, for citizen-auth tests."""
+    from backend.app.auth.security import hash_password
+    from backend.app.models import Citizen
+
+    citizen = Citizen(
+        name="Test Citizen",
+        email="citizen@example.com",
+        password_hash=hash_password("citizen-password-123"),
+        is_active=True,
+    )
+
+    db_session.add(citizen)
+    db_session.commit()
+    db_session.refresh(citizen)
+
+    return citizen
+
+
+@pytest.fixture()
+def citizen_token(dev_citizen):
+    """A valid access token for `dev_citizen`."""
+    from backend.app.auth.service import issue_citizen_token
+
+    return issue_citizen_token(dev_citizen)
+
+
+@pytest.fixture()
 def corridors():
     """The bundled development corridor FeatureCollection."""
     path = (

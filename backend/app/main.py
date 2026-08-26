@@ -1,31 +1,45 @@
-from fastapi import Depends, FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 from pathlib import Path
 import tempfile
+import uuid
 
-from .dependencies import get_db
+from .auth.dependencies import get_current_officer
+from .auth.schemas import (
+    CitizenLoginRequest,
+    CitizenLoginResponse,
+    OfficerLoginRequest,
+    OfficerLoginResponse,
+)
+from .auth.service import InvalidCredentialsError, authenticate_citizen, authenticate_officer, issue_citizen_token, issue_officer_token
+from .dependencies import get_db, get_pothole_detector
 from .defect_workflow import (
     InvalidStatusError,
     InvalidTransitionError,
     apply_status_change,
     record_initial_status,
 )
-from .models import Defect
+from .models import Defect, Officer
 from .schemas import (
     DefectDetailResponse,
     DefectResponse,
     DefectStatusChangeRequest,
     DefectStatusUpdate,
+    ImageReportResponse,
     ReportCreate,
 )
 from .road_health import service as road_health_service
 from .road_health.router import router as road_health_router
 from .road_health.schemas import StatusHistoryEntry
-from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse
+from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse, RoadContext
 from .road_intelligence import service as road_intelligence_service
 from .road_intelligence.severity import InvalidDetectionError
 from .road_intelligence.scoring import InvalidContextError
 from .ml.hawkers.inference import predict
+from .ml.potholes.adapter import to_detection_input
+from .ml.potholes.detector import ModelUnavailableError, PotholeDetector
+
+UPLOAD_DIR = Path(__file__).resolve().parent / "uploads" / "reports"
 
 app = FastAPI(title="Road-Defect Backend")
 
@@ -94,6 +108,56 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/auth/officer/login", response_model=OfficerLoginResponse)
+def officer_login(request: OfficerLoginRequest, db: Session = Depends(get_db)):
+    """
+    Municipal officer login. Verifies against the `officers` table only --
+    citizen credentials can never authenticate here (see
+    `auth.service.authenticate_officer`, which queries `Officer` and nothing
+    else). Returns 401 for unknown email, wrong password, or an inactive
+    officer alike, so the response never reveals which case occurred.
+    """
+    try:
+        officer = authenticate_officer(db, request.email, request.password)
+    except InvalidCredentialsError:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    return {
+        "access_token": issue_officer_token(officer),
+        "token_type": "bearer",
+        "officer": {
+            "officer_id": officer.id,
+            "name": officer.name,
+            "email": officer.email,
+            "department": officer.department,
+        },
+    }
+
+
+@app.post("/auth/citizen/login", response_model=CitizenLoginResponse)
+def citizen_login(request: CitizenLoginRequest, db: Session = Depends(get_db)):
+    """
+    Citizen login. Verifies against the `citizens` table only -- mirrors
+    `officer_login` but is backed by a completely separate identity space
+    (see `auth.service.authenticate_citizen`), so officer credentials can
+    never authenticate here.
+    """
+    try:
+        citizen = authenticate_citizen(db, request.email, request.password)
+    except InvalidCredentialsError:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    return {
+        "access_token": issue_citizen_token(citizen),
+        "token_type": "bearer",
+        "citizen": {
+            "citizen_id": citizen.id,
+            "name": citizen.name,
+            "email": citizen.email,
+        },
+    }
+
+
 @app.post("/reports", response_model=DefectResponse)
 def create_report(report: ReportCreate, db: Session = Depends(get_db)):
     defect = Defect(
@@ -123,6 +187,94 @@ def create_report(report: ReportCreate, db: Session = Depends(get_db)):
         "latitude": defect.latitude,
         "longitude": defect.longitude,
     }
+
+
+@app.post("/reports/image", response_model=ImageReportResponse)
+async def create_report_from_image(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    detector: PotholeDetector = Depends(get_pothole_detector),
+):
+    """
+    Image pipeline for pothole reports:
+
+        uploaded image -> persist image -> PotholeDetector.detect()
+            -> NormalizedDetection -> DetectionInput
+            -> existing Road Intelligence/AHP service -> severity + priority
+            -> persisted Defect
+
+    This is additive: the pre-existing JSON `POST /reports` above is
+    unchanged and still works for callers that already have a
+    type/severity/lat/lon payload with no image.
+
+    Until Harmeet's real detector is wired into
+    `app.ml.potholes.detector.get_default_detector`, `detector.detect()`
+    raises `ModelUnavailableError` and this route responds 503 rather than
+    fabricating a detection. No fake inference output is ever persisted.
+    """
+    suffix = Path(file.filename or "").suffix or ".jpg"
+    image_bytes = await file.read()
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty image file")
+
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    image_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    image_path.write_bytes(image_bytes)
+
+    try:
+        detections = detector.detect(image_path)
+    except ModelUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc))
+
+    if not detections:
+        raise HTTPException(
+            status_code=422,
+            detail="No pothole detected in the uploaded image.",
+        )
+
+    # One Defect per report: score the highest-confidence detection, same as
+    # a single manual report describes a single defect.
+    primary = max(detections, key=lambda d: d.confidence)
+
+    try:
+        analysis = road_intelligence_service.analyze(
+            AnalyzeRequest(
+                detection=to_detection_input(primary),
+                context=RoadContext(latitude=latitude, longitude=longitude),
+            )
+        )
+    except (InvalidDetectionError, InvalidContextError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+    defect = Defect(
+        defect_type=primary.class_name,
+        defect_status="reported",
+        defect_severity=analysis.severity.category.lower(),
+        defect_priority=analysis.priority.score,
+        latitude=latitude,
+        longitude=longitude,
+        image_path=str(image_path),
+    )
+
+    db.add(defect)
+    db.flush()
+
+    road_health_service.assign_defect_to_segment(db, defect)
+    record_initial_status(db, defect)
+
+    db.commit()
+    db.refresh(defect)
+
+    detail = _defect_detail(defect)
+    detail["defect_priority"] = defect.defect_priority
+    detail["image_path"] = defect.image_path
+    detail["defectPriority"] = defect.defect_priority
+    detail["imagePath"] = defect.image_path
+
+    return detail
 
 
 @app.get("/defects", response_model=list[DefectResponse])
@@ -155,16 +307,16 @@ def update_defect(
     defect_id: int,
     update: DefectStatusUpdate,
     db: Session = Depends(get_db),
-    x_officer_id: str | None = Header(default=None, alias="X-Officer-Id"),
+    officer: Officer = Depends(get_current_officer),
 ):
     """
     Existing status-update endpoint, kept backwards compatible.
 
     Same path, same request field (`defect_status`), same response shape, so
     the officer UI's existing Confirm/Reject buttons keep working unchanged.
-    What is new is that the change is now validated against the workflow and
-    recorded in `defect_status_history` instead of silently overwriting the
-    status.
+    What is new is that the change is now validated against the workflow,
+    requires an authenticated officer, and is recorded in
+    `defect_status_history` instead of silently overwriting the status.
 
     This endpoint runs in `legacy` mode, which additionally permits the
     one-step `reported -> confirmed` transition the existing Confirm button
@@ -181,7 +333,7 @@ def update_defect(
         defect,
         status=update.defect_status,
         note=update.note,
-        changed_by=update.changed_by or x_officer_id,
+        changed_by=str(officer.id),
         legacy=True,
     )
 
@@ -203,12 +355,13 @@ def update_defect_status(
     defect_id: int,
     request: DefectStatusChangeRequest,
     db: Session = Depends(get_db),
-    x_officer_id: str | None = Header(default=None, alias="X-Officer-Id"),
+    officer: Officer = Depends(get_current_officer),
 ):
     """
     Officer status update with full workflow validation.
 
         PATCH /defects/12/status
+        Authorization: Bearer <officer access token>
         {"status": "confirmed", "note": "Verified by municipal officer"}
 
     Validates the status against the allowed vocabulary, validates the
@@ -220,9 +373,11 @@ def update_defect_status(
     road-health endpoints derive it from current defect rows on every request,
     so a status change is reflected immediately with no cache to invalidate.
 
-    `changed_by` may come from the request body or an `X-Officer-Id` header.
-    This project has no authentication layer, so it is nullable rather than
-    derived from an authenticated identity; see `defect_workflow`.
+    `changed_by` is always the authenticated officer's id (see
+    `Depends(get_current_officer)` above) -- never a client-supplied header
+    or body field. A request body may still include a `changed_by` field for
+    backwards compatibility with older clients, but its value is ignored;
+    trusting it would let one officer impersonate another.
     """
     defect = db.query(Defect).filter(Defect.id == defect_id).first()
 
@@ -234,7 +389,7 @@ def update_defect_status(
         defect,
         status=request.status,
         note=request.note,
-        changed_by=request.changed_by or x_officer_id,
+        changed_by=str(officer.id),
         legacy=False,
     )
 

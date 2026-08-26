@@ -17,12 +17,14 @@ meaning. `road_health.config` imports nothing, so there is no import cycle.
 
 Authentication
 --------------
-This project has no authentication or user-identity layer, so there is no
-trustworthy "current officer" to attribute a change to. Rather than invent a
-fake one, `changed_by` is nullable end to end: callers may supply it (request
-body field or `X-Officer-Id` header) and it is stored verbatim, otherwise the
-history row records `NULL`. Once real auth exists, populate `changed_by` from
-the authenticated principal in `main.py` -- no other file needs to change.
+Officer authentication lives in `app/auth/` (JWT issued by
+`POST /auth/officer/login`, verified by `Depends(get_current_officer)`).
+`main.py` derives `changed_by` from that authenticated officer's id -- never
+from a client-supplied `X-Officer-Id` header or request body field, which
+would let one officer impersonate another. `changed_by` stays nullable at
+the model/function level only because it is also used by
+`record_initial_status` for system-generated rows (e.g. a citizen's initial
+"reported" entry, which has no officer to attribute).
 """
 
 from __future__ import annotations

@@ -23,9 +23,12 @@ class DefectStatusUpdate(BaseModel):
     """
     Body of the pre-existing `PATCH /defects/{defect_id}` endpoint.
 
-    Unchanged shape, so existing Confirm/Reject callers keep working. The two
-    optional fields are additive: officers using the newer workflow endpoint
-    can also attribute and annotate a change here.
+    Unchanged shape, so existing Confirm/Reject callers keep working.
+    `changed_by` is accepted for backwards compatibility but its value is
+    ignored -- the route now derives the acting officer from the
+    authenticated bearer token (`Depends(get_current_officer)`), never from
+    a client-supplied field. Trusting a client-supplied identity here would
+    let one officer impersonate another.
     """
 
     defect_status: str
@@ -39,8 +42,11 @@ class DefectStatusChangeRequest(BaseModel):
 
         {"status": "confirmed", "note": "Verified by municipal officer"}
 
-    `changed_by` is optional because this project has no authentication layer;
-    see `defect_workflow` for the documented limitation.
+    Requires `Authorization: Bearer <officer access token>`
+    (`Depends(get_current_officer)` on the route). `changed_by` is accepted
+    for backwards compatibility but its value is ignored -- the acting
+    officer is always the authenticated principal, never a client-supplied
+    field, so one officer cannot impersonate another.
     """
 
     model_config = ConfigDict(populate_by_name=True)
@@ -56,7 +62,8 @@ class DefectStatusChangeRequest(BaseModel):
     changed_by: str | None = Field(
         default=None,
         alias="changedBy",
-        description="Officer identifier, if the caller can supply one.",
+        description="Ignored. Retained only for backwards compatibility; "
+                     "the acting officer is derived from the auth token.",
     )
 
 
@@ -84,3 +91,20 @@ class DefectDetailResponse(BaseModel):
     defectStatus: str
     defectSeverity: str
     roadSegmentId: str | None = None
+
+
+class ImageReportResponse(DefectDetailResponse):
+    """
+    Response of `POST /reports/image`.
+
+    A superset of `DefectDetailResponse` (itself a superset of
+    `DefectResponse`), adding the fields that only exist for defects created
+    through the image/detector pipeline: the AHP priority score and the
+    stored source image path.
+    """
+
+    defect_priority: float | None = None
+    image_path: str | None = None
+
+    defectPriority: float | None = None
+    imagePath: str | None = None
