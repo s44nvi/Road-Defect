@@ -59,3 +59,65 @@ read whatever geometry is in the table. Defects are re-snapped automatically by
 OSM data is © OpenStreetMap contributors, licensed under the
 [ODbL](https://www.openstreetmap.org/copyright); if you import it, carry that
 attribution into anything you publish.
+
+## Real MCGM demo data
+
+For the demo, 10 REAL MCGM (Mumbai civic) road-works records were supplied as
+CSVs (not committed to the repo — they live outside `backend/`, e.g.
+`~/Downloads/demo_roads.csv`) and are imported by three repeatable, idempotent
+scripts. Every row is stamped `geometry_source = 'mcgm_demo_csv_v1'`
+(`road_health/config.py`), distinct from `dev_approximate_v1`/`osm_overpass`.
+
+| CSV | Script | Table | Rows |
+|---|---|---|---|
+| `demo_roads.csv` | `python -m backend.scripts.import_demo_roads [--csv PATH] [--dry-run]` | `road_segments` (upsert by `segment_id = f"MCGM-{csv_id}"`) | 10 |
+| `demo_manholes.csv` | `python backend/scripts/import_demo_manholes.py` | `manholes` (upsert by `object_id`) | 179 |
+| `demo_encroachments.csv` | `python backend/scripts/import_demo_encroachments.py` | `encroachments` (upsert by `object_id`) | 56 |
+
+Run in that order (manholes/encroachments associate to the 10 MCGM roads
+already in `road_segments`, and refuse to run if that count isn't exactly 10).
+Each script upserts by its own stable external id, so re-running any of them
+updates the same rows rather than creating duplicates.
+
+**Geometry.** 7 of the 10 roads are a plain WKT `LINESTRING`; 3
+(`18th Road`, `15thRoad`, `13th Road,Khar(W)`) are `MULTILINESTRING`, each with
+two parts. All three are stored and served as genuine GeoJSON
+`MultiLineString` (`road_health/geo.parse_geometry_parts` /
+`multi_linestring`) — parts are never merged, reordered, or bridged with an
+invented connecting line, even where the gap between two parts is only a few
+metres (18th Road, 15thRoad). `13th Road,Khar(W)`'s two parts are ~774 m
+apart — a genuine break in the source data, not a digitization artifact —
+and are preserved exactly that way. `road_health/assignment.py` and
+`road_health/service.py` handle both `LineString` and `MultiLineString`
+uniformly via `geo.parse_geometry_parts`/`geo.point_to_geometry_distance_km`,
+so nothing downstream (Road Health scoring, defect-to-segment snapping,
+`GET /road-health/segments/{id}`) special-cases either shape.
+
+**Length.** `road_segments.length_km` is always computed from the actual
+geometry (`geo.total_length_km` — the sum of each part's own haversine
+length, never a distance across a genuine multi-part gap). The CSV's own
+`length_of_road_m` is preserved separately as `source_length_m`; the two
+numbers legitimately disagree for several roads and neither is forced to
+match the other.
+
+**Manholes/encroachments vs Road Health — the architectural line.** Both are
+context/infrastructure, not defects: `backend/app/assets/` (models `Manhole`,
+`Encroachment` in `app/models.py`; router `app/assets/router.py`) is a
+separate module from `road_health/`, and `road_health/scoring.py` only ever
+reads `Defect` rows — it has no import of, or reference to, `Manhole` or
+`Encroachment`. Neither table's rows ever change `health_score`,
+`total_issues`, or any severity/priority field. They are exposed read-only via:
+
+```
+GET /assets/manholes[?segment_id=MCGM-2353]
+GET /assets/encroachments[?segment_id=MCGM-2353]
+GET /road-health/segments/{segment_id}/assets   -> {"manhole_count", "encroachment_count", "manholes": [...], "encroachments": [...]}
+```
+
+**Association.** Each manhole/encroachment is snapped to the nearest of the
+10 MCGM road segments by real point-to-polyline distance (handling
+`MultiLineString` segments the same way `road_health/assignment.py` does),
+within a 50 m threshold; beyond that it is left unassociated
+(`road_segment_id = NULL`) rather than guessed. In this dataset all 179
+manholes and all 56 encroachments fell within 50 m of their nearest MCGM
+road.

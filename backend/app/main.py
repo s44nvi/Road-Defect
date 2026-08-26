@@ -42,6 +42,7 @@ from .schemas import (
 from .road_health import service as road_health_service
 from .road_health.config import STATUS_CONFIRMED, STATUS_IN_PROGRESS, STATUS_RESOLVED
 from .road_health.router import router as road_health_router
+from .assets.router import router as assets_router
 from .road_health.schemas import StatusHistoryEntry
 from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse, DetectionInput, RoadContext
 from .road_intelligence import service as road_intelligence_service
@@ -56,6 +57,7 @@ UPLOAD_DIR = Path(__file__).resolve().parent / "uploads" / "reports"
 app = FastAPI(title="Road-Defect Backend")
 
 app.include_router(road_health_router)
+app.include_router(assets_router)
 
 # `get_db` now lives in `dependencies.py` so routers can use it without
 # importing this module. Re-exported here so existing
