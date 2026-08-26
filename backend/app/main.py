@@ -100,6 +100,14 @@ def _defect_detail(defect: Defect) -> dict:
     """Defect payload for the officer workflow endpoints (both key styles)."""
     segment_id = defect.road_segment.segment_id if defect.road_segment else None
 
+    reporter = None
+    if defect.citizen is not None:
+        reporter = {
+            "id": defect.citizen.id,
+            "full_name": defect.citizen.name,
+            "email": defect.citizen.email,
+        }
+
     return {
         "defect_id": defect.id,
         "defect_type": defect.defect_type,
@@ -109,6 +117,7 @@ def _defect_detail(defect: Defect) -> dict:
         "longitude": defect.longitude,
         "road_segment_id": segment_id,
         "is_test_data": bool(defect.is_test_data),
+        "reporter": reporter,
         "defectId": defect.id,
         "defectType": defect.defect_type,
         "defectStatus": defect.defect_status,
@@ -399,14 +408,17 @@ def list_defects(
 def get_defect_details(
     defect_id: int,
     db: Session = Depends(get_db),
+    officer: Officer = Depends(get_current_officer),
 ):
     """
-    Return details for one defect.
+    Return details for one defect, including the reporting citizen's name
+    (and email) via `reporter`.
 
-    This endpoint is currently readable without authentication so the existing
-    frontend/officer flow remains backwards compatible. Public visibility
-    filtering should use a separate public/community endpoint rather than
-    weakening the officer dashboard contract.
+    Officer-only: this response now carries citizen PII (see
+    `schemas.ReporterPublic`), so unlike before it requires
+    `Authorization: Bearer <officer access token>`. Public visibility
+    filtering should use `GET /community/issues` instead, which never
+    includes reporter identity.
     """
     defect = (
         db.query(Defect)

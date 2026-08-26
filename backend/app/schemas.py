@@ -150,6 +150,27 @@ class PublicIssueResponse(BaseModel):
     observationCount: int
 
 
+class ReporterPublic(BaseModel):
+    """
+    The citizen who submitted a defect, as the officer view is allowed to
+    see them.
+
+    An explicit allowlist, not the `Citizen` ORM row -- same convention as
+    `auth.schemas.CitizenPublic` (which this mirrors): `password_hash` is
+    never a field here, so there is no field to accidentally serialize.
+    `full_name` is the one guaranteed field; `email` is included because
+    `CitizenPublic` already exposes it in the citizen's own login response,
+    so it is not new sensitive surface, just the same allowlist reused for
+    the officer's view of the same citizen.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    id: int
+    full_name: str
+    email: str
+
+
 class DefectDetailResponse(BaseModel):
     """
     `DefectResponse` plus the road-health fields the officer view needs.
@@ -167,6 +188,9 @@ class DefectDetailResponse(BaseModel):
     longitude: float
     road_segment_id: str | None = None
     is_test_data: bool = False
+    # None for legacy/anonymous defects (created through the unauthenticated
+    # `POST /reports`, or predating citizen association) -- never fabricated.
+    reporter: ReporterPublic | None = None
 
     # camelCase mirror for the officer frontend
     defectId: int
