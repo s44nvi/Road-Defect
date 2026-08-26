@@ -8,6 +8,7 @@ import { Input, Label } from "@/components/ui/input";
 import { CarIcon, PersonIcon, ShieldIcon, CheckCircleIcon } from "@/components/icons";
 import { cn } from "@/lib/cn";
 import { homeRouteForRole, writeSession, type UserRole } from "@/lib/session";
+import { officerLogin, citizenLogin, ApiError } from "@/lib/api";
 
 const roleOptions: {
   value: UserRole;
@@ -27,19 +28,53 @@ const roleOptions: {
 export default function LoginPage() {
   const router = useRouter();
   const [role, setRole] = useState<UserRole>("citizen");
-  const [name, setName] = useState("");
-  const [contact, setContact] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
-  function handleSubmit(event: FormEvent) {
+  async function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) {
-      setError("Enter your name to continue.");
+    const trimmedEmail = email.trim();
+    if (!trimmedEmail || !password) {
+      setError("Enter your email and password to continue.");
       return;
     }
-    writeSession({ role, name: trimmed });
-    router.push(homeRouteForRole(role));
+
+    setSubmitting(true);
+    setError(null);
+    try {
+      if (role === "officer") {
+        const response = await officerLogin({ email: trimmedEmail, password });
+        writeSession({
+          role: "officer",
+          name: response.officer.name,
+          email: response.officer.email,
+          userId: response.officer.officer_id,
+          token: response.access_token,
+        });
+      } else {
+        const response = await citizenLogin({ email: trimmedEmail, password });
+        writeSession({
+          role: "citizen",
+          name: response.citizen.name,
+          email: response.citizen.email,
+          userId: response.citizen.citizen_id,
+          token: response.access_token,
+        });
+      }
+      router.push(homeRouteForRole(role));
+    } catch (err) {
+      setError(
+        err instanceof ApiError
+          ? err.status === 401 || err.status === 422
+            ? "Incorrect email or password."
+            : err.message
+          : "Something went wrong signing in. Please try again.",
+      );
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
@@ -99,26 +134,31 @@ export default function LoginPage() {
 
             <div className="space-y-4">
               <div>
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="email">Email</Label>
                 <Input
-                  id="name"
-                  placeholder="Jane Doe"
-                  value={name}
+                  id="email"
+                  type="email"
+                  placeholder="jane@example.com"
+                  value={email}
                   onChange={(event) => {
-                    setName(event.target.value);
+                    setEmail(event.target.value);
                     if (error) setError(null);
                   }}
-                  autoComplete="name"
+                  autoComplete="email"
                 />
               </div>
               <div>
-                <Label htmlFor="contact">Email or Phone (optional)</Label>
+                <Label htmlFor="password">Password</Label>
                 <Input
-                  id="contact"
-                  placeholder="jane@example.com"
-                  value={contact}
-                  onChange={(event) => setContact(event.target.value)}
-                  autoComplete="email"
+                  id="password"
+                  type="password"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(event) => {
+                    setPassword(event.target.value);
+                    if (error) setError(null);
+                  }}
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -129,14 +169,14 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button type="submit" className="w-full">
-              Continue
+            <Button type="submit" className="w-full" disabled={submitting}>
+              {submitting ? "Signing in…" : "Continue"}
             </Button>
           </form>
 
           <p className="mt-6 text-center text-xs text-on-surface-variant">
-            This is a local demo session stored only in your browser — RoadSense does not have a
-            real account system yet.
+            Signs in against the real RoadSense backend. Your session token is stored only in this
+            browser.
           </p>
         </Card>
       </div>

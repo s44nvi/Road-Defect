@@ -1,13 +1,17 @@
-// Local-only demo session. The backend has no auth endpoints, so this is
-// NOT real authentication — it just remembers a name/role choice in this
-// browser so the citizen/officer UIs and route gating have something to
-// key off of.
+// Session persisted in this browser after a real login (POST
+// /auth/officer/login or POST /auth/citizen/login). The JWT lives in
+// localStorage rather than an httpOnly cookie — the backend has no cookie
+// support today — so it is readable by any script on this origin; treat
+// this as a known limitation, not a hardened auth store.
 
 export type UserRole = "citizen" | "officer";
 
 export interface Session {
   role: UserRole;
   name: string;
+  email: string;
+  userId: number;
+  token: string;
 }
 
 const STORAGE_KEY = "roadsense.session";
@@ -23,9 +27,13 @@ export function readSession(): Session | null {
     if (
       (parsed.role === "citizen" || parsed.role === "officer") &&
       typeof parsed.name === "string" &&
-      parsed.name.trim().length > 0
+      parsed.name.trim().length > 0 &&
+      typeof parsed.token === "string" &&
+      parsed.token.length > 0 &&
+      typeof parsed.userId === "number" &&
+      typeof parsed.email === "string"
     ) {
-      return { role: parsed.role, name: parsed.name };
+      return { role: parsed.role, name: parsed.name, email: parsed.email, userId: parsed.userId, token: parsed.token };
     }
     return null;
   } catch {

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { Card } from "@/components/ui/card";
 import { StatusChip } from "@/components/ui/status-chip";
 import { SeverityBadge } from "@/components/ui/severity-badge";
@@ -8,9 +9,12 @@ import type { DefectResponse } from "@/lib/api";
 export function DefectSummaryCard({
   defect,
   onClose,
+  detailsHref,
 }: {
   defect: DefectResponse;
   onClose: () => void;
+  /** Optional "View Incident" link — used by the officer dashboard, unused by citizen /home. */
+  detailsHref?: string;
 }) {
   return (
     <Card className="w-72 p-4">
@@ -39,6 +43,14 @@ export function DefectSummaryCard({
       <p className="mt-3 text-xs text-on-surface-variant">
         {defect.latitude.toFixed(5)}, {defect.longitude.toFixed(5)}
       </p>
+      {detailsHref && (
+        <Link
+          href={detailsHref}
+          className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+        >
+          View Incident →
+        </Link>
+      )}
     </Card>
   );
 }

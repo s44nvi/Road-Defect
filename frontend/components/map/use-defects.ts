@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { fetchDefects, type DefectResponse } from "@/lib/api";
+import { fetchDefects, type DefectResponseWithPriority } from "@/lib/api";
 import { MOCK_DEFECTS } from "@/lib/mock-defects";
 
 // Opt-in, dev-only fallback — see lib/mock-defects.ts. Off by default, so
@@ -12,7 +12,7 @@ const USE_MOCK_FALLBACK = process.env.NEXT_PUBLIC_ENABLE_DEFECT_MOCK === "true";
 type DefectsState =
   | { status: "loading" }
   | { status: "error"; message: string }
-  | { status: "ready"; defects: DefectResponse[]; usingMock: boolean };
+  | { status: "ready"; defects: DefectResponseWithPriority[]; usingMock: boolean };
 
 export function useDefects(): DefectsState & { reload: () => void } {
   const [state, setState] = useState<DefectsState>({ status: "loading" });

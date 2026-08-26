@@ -1,19 +1,87 @@
 "use client";
 
-import Link from "next/link";
+import { useMemo, useState } from "react";
 import { RequireSession } from "@/components/auth/require-session";
 import { OfficerShell } from "@/components/layout/officer-shell";
 import { PageContainer } from "@/components/layout/page-container";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { StatusChip } from "@/components/ui/status-chip";
-import { SeverityBadge } from "@/components/ui/severity-badge";
+import { DefectMap } from "@/components/map/defect-map";
+import { MapLegend } from "@/components/map/map-legend";
+import { RoadHealthLegend } from "@/components/map/road-health-legend";
+import { DefectSummaryCard } from "@/components/map/defect-summary-card";
 import { useDefects } from "@/components/map/use-defects";
-import { defectTypeLabel } from "@/lib/defect-types";
-import { statusTone, statusLabel } from "@/lib/defect-status";
+import { useRoadHealth } from "@/components/map/use-road-health";
+import { SummaryCards } from "@/components/dashboard/summary-cards";
+import { RoadHealthSummary } from "@/components/dashboard/road-health-summary";
+import {
+  RoadHealthFilters,
+  type RoadHealthCategoryFilter,
+  type RoadHealthSortKey,
+} from "@/components/dashboard/road-health-filters";
+import { IncidentQueue } from "@/components/dashboard/incident-queue";
+import { RoadHealthPopup } from "@/components/dashboard/road-health-popup";
+import { RoadsNeedingAttention } from "@/components/dashboard/roads-needing-attention";
+import type { DefectResponse, RoadHealthSegment } from "@/lib/api";
+
+function MapStateOverlay({
+  state,
+  onRetry,
+}: {
+  state: "loading" | "error";
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="absolute inset-0 z-20 flex items-center justify-center bg-surface-container-lowest/85 backdrop-blur-sm">
+      {state === "loading" ? (
+        <p className="text-sm text-on-surface-variant">Loading defect data…</p>
+      ) : (
+        <div className="text-center">
+          <p className="text-sm text-on-surface-variant">Couldn&apos;t load defect data.</p>
+          <Button variant="secondary" className="mt-3" onClick={onRetry}>
+            Retry
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+const EMPTY_SEGMENTS: RoadHealthSegment[] = [];
 
 function DashboardContent({ name }: { name: string }) {
   const defectsState = useDefects();
+  const roadHealthState = useRoadHealth();
+  const [selected, setSelected] = useState<DefectResponse | null>(null);
+  const [selectedSegment, setSelectedSegment] = useState<RoadHealthSegment | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState<RoadHealthCategoryFilter>("all");
+  const [sortKey, setSortKey] = useState<RoadHealthSortKey>("worst_health");
+
+  const defects = defectsState.status === "ready" ? defectsState.defects : [];
+
+  // Real road segments only — [] whenever the backend endpoint is
+  // disabled/unreachable/empty, never a fabricated stand-in. Kept as a
+  // stable reference so the map's road-health effect doesn't resync on
+  // every unrelated dashboard re-render.
+  const roadSegments = roadHealthState.status === "ready" ? roadHealthState.segments : EMPTY_SEGMENTS;
+  const hasRoadHealthData = roadHealthState.status === "ready";
+
+  const filteredSortedSegments = useMemo(() => {
+    const filtered =
+      categoryFilter === "all"
+        ? roadSegments
+        : roadSegments.filter((s) => s.health_category === categoryFilter);
+
+    const sorted = [...filtered];
+    if (sortKey === "most_open_issues") {
+      sorted.sort((a, b) => b.open_issues - a.open_issues);
+    } else if (sortKey === "most_critical_issues") {
+      sorted.sort((a, b) => b.critical_issues - a.critical_issues);
+    } else {
+      sorted.sort((a, b) => a.health_score - b.health_score);
+    }
+    return sorted;
+  }, [roadSegments, categoryFilter, sortKey]);
 
   return (
     <OfficerShell name={name}>
@@ -31,72 +99,81 @@ function DashboardContent({ name }: { name: string }) {
           </p>
         )}
 
-        {defectsState.status === "loading" && (
-          <Card className="p-8 text-center">
-            <p className="text-sm text-on-surface-variant">Loading defects…</p>
-          </Card>
-        )}
+        <SummaryCards defects={defects} />
 
-        {defectsState.status === "error" && (
-          <Card className="p-8 text-center">
-            <p className="text-sm text-on-surface-variant">Couldn&apos;t load defects.</p>
-            <Button variant="secondary" className="mt-3" onClick={defectsState.reload}>
-              Retry
-            </Button>
-          </Card>
-        )}
+        <div className="space-y-3">
+          <h2 className="text-lg font-semibold text-on-surface">Road health</h2>
+          <RoadHealthSummary state={roadHealthState} />
+          <RoadHealthFilters
+            categoryFilter={categoryFilter}
+            onCategoryFilterChange={setCategoryFilter}
+            sortKey={sortKey}
+            onSortKeyChange={setSortKey}
+          />
+        </div>
 
-        {defectsState.status === "ready" && defectsState.defects.length === 0 && (
-          <Card className="p-8 text-center">
-            <p className="text-sm text-on-surface-variant">No defects reported yet.</p>
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_380px]">
+          <Card className="relative h-[420px] overflow-hidden p-0 md:h-[560px]">
+            <DefectMap
+              defects={defects}
+              selectedId={selected?.defect_id ?? null}
+              onSelect={setSelected}
+              roadSegments={roadSegments}
+              selectedSegmentId={selectedSegment?.road_segment_id ?? null}
+              onSelectSegment={setSelectedSegment}
+            />
+            <div className="pointer-events-none absolute inset-0 flex flex-col justify-between p-4">
+              <div className="pointer-events-auto flex justify-end gap-2">
+                <RoadHealthLegend active={hasRoadHealthData && roadSegments.length > 0} />
+                <MapLegend />
+              </div>
+              <div className="pointer-events-auto flex items-end justify-between gap-2">
+                {selectedSegment ? (
+                  <RoadHealthPopup segment={selectedSegment} onClose={() => setSelectedSegment(null)} />
+                ) : (
+                  <span />
+                )}
+                {selected && (
+                  <DefectSummaryCard
+                    defect={selected}
+                    onClose={() => setSelected(null)}
+                    detailsHref={`/defect/${selected.defect_id}`}
+                  />
+                )}
+              </div>
+            </div>
+            {(defectsState.status === "loading" || defectsState.status === "error") && (
+              <MapStateOverlay
+                state={defectsState.status}
+                onRetry={defectsState.status === "error" ? defectsState.reload : undefined}
+              />
+            )}
           </Card>
-        )}
 
-        {defectsState.status === "ready" && defectsState.defects.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-border-subtle bg-surface-container-lowest">
-            <table className="w-full text-left text-sm">
-              <thead className="bg-surface-container-low text-xs uppercase tracking-wide text-on-surface-variant">
-                <tr>
-                  <th className="px-4 py-3 font-medium">ID</th>
-                  <th className="px-4 py-3 font-medium">Type</th>
-                  <th className="px-4 py-3 font-medium">Severity</th>
-                  <th className="px-4 py-3 font-medium">Status</th>
-                  <th className="px-4 py-3 font-medium">Location</th>
-                  <th className="px-4 py-3" />
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border-subtle">
-                {[...defectsState.defects]
-                  .sort((a, b) => b.defect_id - a.defect_id)
-                  .map((defect) => (
-                    <tr key={defect.defect_id} className="hover:bg-surface-container-low">
-                      <td className="px-4 py-3 font-medium text-on-surface">#{defect.defect_id}</td>
-                      <td className="px-4 py-3 text-on-surface">{defectTypeLabel(defect.defect_type)}</td>
-                      <td className="px-4 py-3">
-                        <SeverityBadge severity={defect.defect_severity} />
-                      </td>
-                      <td className="px-4 py-3">
-                        <StatusChip tone={statusTone(defect.defect_status)}>
-                          {statusLabel(defect.defect_status)}
-                        </StatusChip>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-on-surface-variant">
-                        {defect.latitude.toFixed(4)}, {defect.longitude.toFixed(4)}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        <Link
-                          href={`/defect/${defect.defect_id}`}
-                          className="text-sm font-medium text-primary hover:underline"
-                        >
-                          Open
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+          <div>
+            <h2 className="mb-3 text-lg font-semibold text-on-surface">Incident queue</h2>
+            {defectsState.status === "loading" ? (
+              <Card className="p-6 text-center">
+                <p className="text-sm text-on-surface-variant">Loading…</p>
+              </Card>
+            ) : defectsState.status === "error" ? (
+              <Card className="p-6 text-center">
+                <p className="text-sm text-on-surface-variant">Couldn&apos;t load incidents.</p>
+                <Button variant="secondary" className="mt-3" onClick={defectsState.reload}>
+                  Retry
+                </Button>
+              </Card>
+            ) : (
+              <IncidentQueue
+                defects={defects}
+                selectedId={selected?.defect_id ?? null}
+                onSelect={setSelected}
+              />
+            )}
           </div>
-        )}
+        </div>
+
+        <RoadsNeedingAttention segments={filteredSortedSegments} hasBackendData={hasRoadHealthData} />
       </PageContainer>
     </OfficerShell>
   );

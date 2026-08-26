@@ -15,6 +15,7 @@ import { DefectSummaryCard } from "@/components/map/defect-summary-card";
 import { useDefects } from "@/components/map/use-defects";
 import { HealthSummary } from "@/components/home/health-summary";
 import { RecentReports } from "@/components/home/recent-reports";
+import { isPubliclyVisibleStatus } from "@/lib/defect-status";
 import type { DefectResponse } from "@/lib/api";
 
 function MapStateOverlay({
@@ -45,7 +46,13 @@ function CitizenHomeContent({ name }: { name: string }) {
   const [selected, setSelected] = useState<DefectResponse | null>(null);
   const searchParams = useSearchParams();
 
-  const defects = defectsState.status === "ready" ? defectsState.defects : [];
+  // Community view: only officer-confirmed/in-progress/resolved issues —
+  // unverified ("reported") and dismissed ("rejected") reports aren't
+  // shown as live community issues here. See lib/defect-status.ts.
+  const defects =
+    defectsState.status === "ready"
+      ? defectsState.defects.filter((d) => isPubliclyVisibleStatus(d.defect_status))
+      : [];
   const firstName = name.trim().split(/\s+/)[0] ?? name;
 
   // Supports the "View Report" link from the report-success screen
@@ -68,6 +75,7 @@ function CitizenHomeContent({ name }: { name: string }) {
             <h1 className="text-2xl font-semibold text-on-surface">Welcome back, {firstName}</h1>
             <p className="mt-1 text-sm text-on-surface-variant">
               Your reports help RoadSense build a clearer picture of road conditions across Mumbai.
+              Showing officer-confirmed and in-progress issues.
             </p>
           </div>
           <Link href="/report">

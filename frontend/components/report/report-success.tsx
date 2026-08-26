@@ -3,14 +3,15 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { CheckCircleIcon } from "@/components/icons";
+import { AIAnalysisSection } from "@/components/incident/ai-analysis-section";
 import { defectTypeLabel } from "@/lib/defect-types";
-import type { DefectResponse } from "@/lib/api";
+import type { ImageReportResponse } from "@/lib/api";
 
-// Every field shown here comes directly off the DefectResponse the backend
-// returned from POST /reports — nothing here is invented. The backend
-// always creates a new row (see lib/api.ts's submitReport() comment), so
-// there's no duplicate/merge state to special-case.
-export function ReportSuccess({ defect }: { defect: DefectResponse }) {
+// Every field shown here comes directly off the ImageReportResponse the
+// backend returned from POST /reports/image — nothing here is invented.
+// The backend always creates a new row, so there's no duplicate/merge
+// state to special-case.
+export function ReportSuccess({ defect }: { defect: ImageReportResponse }) {
   return (
     <Card className="mx-auto max-w-lg p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">
@@ -42,8 +43,15 @@ export function ReportSuccess({ defect }: { defect: DefectResponse }) {
         </div>
       </div>
 
+      <div className="mt-4 text-left">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-on-surface-variant">
+          AI Analysis
+        </p>
+        <AIAnalysisSection />
+      </div>
+
       <div className="mt-6 flex flex-col gap-2 sm:flex-row">
-        <Link href={`/home?defect=${defect.defect_id}`} className="flex-1">
+        <Link href={`/my-reports/${defect.defect_id}`} className="flex-1">
           <Button variant="secondary" className="w-full">
             View Report
           </Button>

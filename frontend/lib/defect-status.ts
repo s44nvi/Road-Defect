@@ -19,3 +19,18 @@ export function statusLabel(status: string): string {
     .map((word) => word[0].toUpperCase() + word.slice(1))
     .join(" ");
 }
+
+// Real backend lifecycle (see DefectStatusChangeRequest in the live
+// OpenAPI schema): reported, confirmed, in_progress, resolved, rejected.
+// The citizen "community issues" view (app/home/page.tsx) should only
+// surface issues an officer has actually verified — "reported" is an
+// unconfirmed citizen submission an officer hasn't reviewed yet, and
+// "rejected" was reviewed and dismissed as not a real issue. Showing
+// either as a live community issue would misrepresent unverified/
+// dismissed reports as confirmed problems. The officer dashboard is
+// unaffected by this — officers need to see every status.
+const PUBLICLY_VISIBLE_STATUSES = new Set(["confirmed", "in_progress", "resolved"]);
+
+export function isPubliclyVisibleStatus(status: string): boolean {
+  return PUBLICLY_VISIBLE_STATUSES.has(status.trim().toLowerCase());
+}

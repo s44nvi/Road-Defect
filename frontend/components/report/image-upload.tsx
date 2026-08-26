@@ -13,13 +13,10 @@ export interface ImageUploadValue {
   previewUrl: string;
 }
 
-// NOTE: backend/app/schemas.py::ReportCreate has no image/file field, and
-// there is no upload endpoint anywhere in backend/app/main.py. The photo
-// is kept entirely client-side (an object URL preview) so the upload UX is
-// real and usable, but it is never sent anywhere — see lib/api.ts's
-// submitReport(), which only transmits the four fields the backend
-// actually accepts. This is intentional, not a bug: swap in a real upload
-// call here once the backend exposes one.
+// The captured File is handed to lib/api.ts's submitImageReport(), which
+// POSTs it (multipart/form-data) to /reports/image along with the report's
+// coordinates. This component only owns local preview/validation — it
+// never uploads anything itself.
 export function ImageUpload({
   value,
   onChange,
@@ -136,8 +133,7 @@ export function ImageUpload({
 
       {localError && <p className="mt-2 text-xs text-error">{localError}</p>}
       <p className="mt-2 text-xs text-on-surface-variant">
-        Your photo is kept with this report on your device for reference. The RoadSense backend
-        doesn&apos;t accept uploaded images yet, so it isn&apos;t sent to the server.
+        Your photo is uploaded with this report so RoadSense can analyze it.
       </p>
     </div>
   );

@@ -12,7 +12,8 @@ import { LocationPicker, type Coordinates } from "@/components/report/location-p
 import { DefectTypeSelect } from "@/components/report/defect-type-select";
 import { SeveritySelect } from "@/components/report/severity-select";
 import { ReportSuccess } from "@/components/report/report-success";
-import { submitReport, ApiError, type DefectResponse } from "@/lib/api";
+import { AIAnalysisSection } from "@/components/incident/ai-analysis-section";
+import { submitImageReport, ApiError, type ImageReportResponse } from "@/lib/api";
 import type { DefectTypeKey } from "@/lib/defect-types";
 import type { Severity } from "@/components/ui/severity-badge";
 
@@ -23,15 +24,22 @@ interface FieldErrors {
   location?: string;
 }
 
-function ReportForm() {
+function ReportForm({ token }: { token: string }) {
   const [image, setImage] = useState<ImageUploadValue | null>(null);
+  // Kept as manual fields for now — POST /reports/image classifies the
+  // defect itself (that's the point of the pipeline), but its response
+  // doesn't echo a defect_type/severity choice back, and the backend
+  // currently 503s before ever reaching that stage (see the catch below).
+  // Once the detector is live end-to-end, revisit whether these selects
+  // are still needed or should become read-only confirmations of the
+  // model's own classification.
   const [defectType, setDefectType] = useState<DefectTypeKey | null>(null);
   const [severity, setSeverity] = useState<Severity | null>(null);
   const [location, setLocation] = useState<Coordinates | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [result, setResult] = useState<DefectResponse | null>(null);
+  const [result, setResult] = useState<ImageReportResponse | null>(null);
 
   if (result) {
     return <ReportSuccess defect={result} />;
@@ -51,19 +59,27 @@ function ReportForm() {
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const defect = await submitReport({
-        defect_type: defectType!,
-        defect_severity: severity!,
-        latitude: location!.latitude,
-        longitude: location!.longitude,
-      });
+      const defect = await submitImageReport(
+        { latitude: location!.latitude, longitude: location!.longitude, file: image!.file },
+        token,
+      );
       setResult(defect);
     } catch (error) {
-      setSubmitError(
-        error instanceof ApiError
-          ? error.message
-          : "Something went wrong submitting your report. Please try again.",
-      );
+      if (error instanceof ApiError && error.status === 503) {
+        // Documented, expected state: backend/app/main.py's /reports/image
+        // route raises ModelUnavailableError until the pothole detector is
+        // wired in, and returns 503 with no fake inference result. Show
+        // that honestly rather than retrying silently or fabricating one.
+        setSubmitError(
+          "Photo-based reporting isn't available yet — the detection model hasn't been connected on the backend. Please try again later.",
+        );
+      } else {
+        setSubmitError(
+          error instanceof ApiError
+            ? error.message
+            : "Something went wrong submitting your report. Please try again.",
+        );
+      }
     } finally {
       setSubmitting(false);
     }
@@ -90,6 +106,17 @@ function ReportForm() {
           </div>
         </Card>
       </div>
+
+      <Card className="p-6">
+        <h2 className="text-base font-semibold text-on-surface">AI Analysis</h2>
+        <p className="mt-1 text-xs text-on-surface-variant">
+          RoadSense can automatically detect the issue type and severity from your photo once ML
+          analysis is connected.
+        </p>
+        <div className="mt-4">
+          <AIAnalysisSection />
+        </div>
+      </Card>
 
       <Card className="p-6">
         <h2 className="text-base font-semibold text-on-surface">What did you spot?</h2>
@@ -130,7 +157,7 @@ function ReportForm() {
   );
 }
 
-function ReportPageContent({ name }: { name: string }) {
+function ReportPageContent({ name, token }: { name: string; token: string }) {
   return (
     <CitizenShell name={name}>
       <PageContainer className="space-y-6 py-8">
@@ -140,7 +167,7 @@ function ReportPageContent({ name }: { name: string }) {
             Help RoadSense identify problems on Mumbai&apos;s roads.
           </p>
         </div>
-        <ReportForm />
+        <ReportForm token={token} />
       </PageContainer>
     </CitizenShell>
   );
@@ -148,6 +175,8 @@ function ReportPageContent({ name }: { name: string }) {
 
 export default function ReportIssuePage() {
   return (
-    <RequireSession role="citizen">{(session) => <ReportPageContent name={session.name} />}</RequireSession>
+    <RequireSession role="citizen">
+      {(session) => <ReportPageContent name={session.name} token={session.token} />}
+    </RequireSession>
   );
 }
