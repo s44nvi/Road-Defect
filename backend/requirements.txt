@@ -7,3 +7,4 @@ numpy==2.5.2
 ultralytics==8.4.128
 torch==2.13.0
 python-multipart==0.0.32
+alembic==1.19.1
