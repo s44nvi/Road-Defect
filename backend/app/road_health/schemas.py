@@ -61,6 +61,11 @@ class SegmentProperties(BaseModel):
     critical_issues: int
     medium_issues: int
     low_issues: int
+    # Status-level split of active_issues (reported + confirmed + in_progress
+    # == active_issues). Additive: active_issues itself is unchanged.
+    reported_issues: int
+    confirmed_issues: int
+    in_progress_issues: int
     geometry_source: str | None = None
 
     # --- camelCase mirror for the existing officer frontend ------------------
@@ -76,6 +81,9 @@ class SegmentProperties(BaseModel):
     criticalCount: int
     mediumCount: int
     lowCount: int
+    reportedIssues: int
+    confirmedIssues: int
+    inProgressIssues: int
 
 
 class SegmentFeature(BaseModel):
@@ -136,6 +144,9 @@ class SegmentDetail(BaseModel):
     critical_issues: int
     medium_issues: int
     low_issues: int
+    reported_issues: int
+    confirmed_issues: int
+    in_progress_issues: int
     active_issue_load: float
     load_density_per_km: float
     defects: list[SegmentDefect]
@@ -153,6 +164,9 @@ class SegmentDetail(BaseModel):
     criticalCount: int
     mediumCount: int
     lowCount: int
+    reportedIssues: int
+    confirmedIssues: int
+    inProgressIssues: int
 
 
 class StatusHistoryEntry(BaseModel):

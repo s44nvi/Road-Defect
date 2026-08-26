@@ -115,6 +115,41 @@ class DefectSeverityUpdate(BaseModel):
         return normalized
 
 
+class PublicIssueResponse(BaseModel):
+    """
+    `GET /community/issues` response: one publicly-visible defect.
+
+    Deliberately a distinct, narrower schema from `DefectDetailResponse`
+    (the officer view) -- only confirmed/in_progress/resolved defects are
+    ever serialized into this shape, and only the fields Saanvi's community
+    map needs are exposed (no `image_path`, no `is_test_data`, etc).
+
+    `observation_count` reflects the current data model, where each citizen
+    report is its own `Defect` row with no deduplication/merging of repeat
+    reports for the same real-world issue -- it is always 1 today. Once a
+    dedup/merge mechanism exists this is the field to start incrementing.
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    defect_id: int
+    defect_type: str
+    defect_status: str
+    defect_severity: str
+    latitude: float
+    longitude: float
+    road_segment_id: str | None = None
+    observation_count: int
+
+    # camelCase mirror, consistent with the rest of the API
+    defectId: int
+    defectType: str
+    defectStatus: str
+    defectSeverity: str
+    roadSegmentId: str | None = None
+    observationCount: int
+
+
 class DefectDetailResponse(BaseModel):
     """
     `DefectResponse` plus the road-health fields the officer view needs.

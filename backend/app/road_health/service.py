@@ -55,7 +55,27 @@ def evaluate(defects: list[Defect], length_km: float) -> HealthResult:
     )
 
 
-def _properties(segment: RoadSegment, health: HealthResult) -> dict:
+def _status_breakdown(defects: list[Defect]) -> dict[str, int]:
+    """
+    Status-level split of the active defects on a segment
+    (reported/confirmed/in_progress). `scoring.evaluate_segment` only
+    reports the aggregate `active_issues` count -- this is computed
+    separately, straight from the raw statuses, so it never has to touch
+    the health-scoring formula itself.
+
+    `reported_issues + confirmed_issues + in_progress_issues == active_issues`.
+    """
+    counts = {"reported": 0, "confirmed": 0, "in_progress": 0}
+
+    for defect in defects:
+        status = scoring.normalize_status(defect.defect_status)
+        if status in counts:
+            counts[status] += 1
+
+    return counts
+
+
+def _properties(segment: RoadSegment, health: HealthResult, status_counts: dict[str, int]) -> dict:
     """
     GeoJSON `properties` for one segment.
 
@@ -82,6 +102,9 @@ def _properties(segment: RoadSegment, health: HealthResult) -> dict:
         "critical_issues": health.critical_issues,
         "medium_issues": health.medium_issues,
         "low_issues": health.low_issues,
+        "reported_issues": status_counts["reported"],
+        "confirmed_issues": status_counts["confirmed"],
+        "in_progress_issues": status_counts["in_progress"],
         "geometry_source": segment.geometry_source,
         # camelCase mirror for the existing frontend contract
         "segmentId": segment.segment_id,
@@ -96,6 +119,9 @@ def _properties(segment: RoadSegment, health: HealthResult) -> dict:
         "criticalCount": health.critical_issues,
         "mediumCount": health.medium_issues,
         "lowCount": health.low_issues,
+        "reportedIssues": status_counts["reported"],
+        "confirmedIssues": status_counts["confirmed"],
+        "inProgressIssues": status_counts["in_progress"],
     }
 
 
@@ -107,7 +133,7 @@ def build_feature(db: Session, segment: RoadSegment) -> dict:
     return {
         "type": "Feature",
         "geometry": _geometry_payload(segment),
-        "properties": _properties(segment, health),
+        "properties": _properties(segment, health, _status_breakdown(defects)),
     }
 
 
@@ -166,7 +192,7 @@ def build_segment_detail(db: Session, segment: RoadSegment) -> dict:
     defects = load_segment_defects(db, segment)
     health = evaluate(defects, segment.length_km)
 
-    detail = dict(_properties(segment, health))
+    detail = dict(_properties(segment, health, _status_breakdown(defects)))
     detail["geometry"] = _geometry_payload(segment)
     detail["active_issue_load"] = health.active_load
     detail["load_density_per_km"] = health.load_density

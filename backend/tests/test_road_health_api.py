@@ -84,6 +84,41 @@ def test_every_feature_has_the_required_health_properties(client, make_segment, 
     assert properties["critical_issues"] == 1
 
 
+def test_segment_properties_include_status_breakdown(client, make_segment, make_defect):
+    segment = make_segment("SEG-A", SIMPLE_LINE, length_km=2.0, road_name="Test Road A")
+    make_defect(19.00, 72.805, severity="critical", status="reported", segment=segment)
+    make_defect(19.00, 72.806, severity="medium", status="confirmed", segment=segment)
+    make_defect(19.00, 72.807, severity="low", status="in_progress", segment=segment)
+    make_defect(19.00, 72.808, severity="low", status="resolved", segment=segment)
+
+    body = client.get("/road-health/segments").json()
+    properties = body["features"][0]["properties"]
+
+    assert properties["reported_issues"] == 1
+    assert properties["confirmed_issues"] == 1
+    assert properties["in_progress_issues"] == 1
+    assert (
+        properties["reported_issues"]
+        + properties["confirmed_issues"]
+        + properties["in_progress_issues"]
+        == properties["active_issues"]
+    )
+    assert properties["reportedIssues"] == 1
+    assert properties["confirmedIssues"] == 1
+    assert properties["inProgressIssues"] == 1
+
+
+def test_segment_detail_includes_status_breakdown(client, make_segment, make_defect):
+    segment = make_segment("SEG-A", SIMPLE_LINE, length_km=2.0, road_name="Test Road A")
+    make_defect(19.00, 72.805, severity="critical", status="confirmed", segment=segment)
+
+    body = client.get("/road-health/segments/SEG-A").json()
+
+    assert body["confirmed_issues"] == 1
+    assert body["reported_issues"] == 0
+    assert body["in_progress_issues"] == 0
+
+
 def test_segment_detail_returns_required_information(client, make_segment):
     make_segment("SEG-A", SIMPLE_LINE, length_km=2.0, road_name="Test Road A")
 

@@ -34,9 +34,11 @@ from .schemas import (
     DefectStatusChangeRequest,
     DefectStatusUpdate,
     ImageReportResponse,
+    PublicIssueResponse,
     ReportCreate,
 )
 from .road_health import service as road_health_service
+from .road_health.config import STATUS_CONFIRMED, STATUS_IN_PROGRESS, STATUS_RESOLVED
 from .road_health.router import router as road_health_router
 from .road_health.schemas import StatusHistoryEntry
 from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse, RoadContext
@@ -416,6 +418,53 @@ def get_defect_details(
         )
 
     return _defect_detail(defect)
+
+
+_PUBLIC_STATUSES = frozenset({STATUS_CONFIRMED, STATUS_IN_PROGRESS, STATUS_RESOLVED})
+
+
+@app.get(
+    "/community/issues",
+    response_model=list[PublicIssueResponse],
+)
+def list_public_issues(db: Session = Depends(get_db)):
+    """
+    Citizen-facing community map: defects an officer has confirmed, are
+    still being worked, or have been resolved.
+
+    Deliberately excludes `reported` (not yet reviewed by an officer) and
+    `rejected` (dismissed as not-a-defect) -- an unconfirmed or rejected
+    report must never appear on the public map. See `GET /defects`
+    (officer dashboard) for the unfiltered view.
+
+    No authentication required -- this is the public read surface.
+    """
+    defects = (
+        db.query(Defect)
+        .filter(Defect.defect_status.in_(_PUBLIC_STATUSES))
+        .order_by(Defect.id.desc())
+        .all()
+    )
+
+    return [
+        {
+            "defect_id": defect.id,
+            "defect_type": defect.defect_type,
+            "defect_status": defect.defect_status,
+            "defect_severity": defect.defect_severity,
+            "latitude": defect.latitude,
+            "longitude": defect.longitude,
+            "road_segment_id": defect.road_segment.segment_id if defect.road_segment else None,
+            "observation_count": 1,
+            "defectId": defect.id,
+            "defectType": defect.defect_type,
+            "defectStatus": defect.defect_status,
+            "defectSeverity": defect.defect_severity,
+            "roadSegmentId": defect.road_segment.segment_id if defect.road_segment else None,
+            "observationCount": 1,
+        }
+        for defect in defects
+    ]
 
 
 @app.post(
