@@ -1,9 +1,17 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import type { HawkerDetectionItem } from "@/lib/api";
 
 const BOX_COLORS = ["#ba1a1a", "#006948", "#f59e0b", "#1d4ed8", "#9333ea"];
+
+// Generic over any detection shape with a bbox + confidence — originally
+// hawker-specific (HawkerDetectionItem), now also used for the unified
+// POST /reports/analyze result (pothole/crack detections also carry a
+// real bbox as of backend commit 618fbfe).
+export interface BoxDetection {
+  bbox: [number, number, number, number];
+  confidence: number;
+}
 
 // The API returns bbox coordinates in the *original* uploaded image's
 // pixel dimensions (see lib/api.ts's HawkerDetection). The <img> here is
@@ -12,12 +20,17 @@ const BOX_COLORS = ["#ba1a1a", "#006948", "#f59e0b", "#1d4ed8", "#9333ea"];
 // clientWidth/clientHeight gives an exact, reliable scale factor. Using
 // object-fit/contain instead would break this, since the rendered image
 // content could then be smaller than the element's box.
-export function BoundingBoxOverlay({
+export function BoundingBoxOverlay<T extends BoxDetection>({
   imageUrl,
   detections,
+  labelFor = (detection) => `${(detection.confidence * 100).toFixed(0)}%`,
 }: {
   imageUrl: string;
-  detections: HawkerDetectionItem[];
+  detections: T[];
+  /** Text shown on each box's tag. Defaults to just the confidence
+   * percentage — pass this to add a category label, but never the raw
+   * hawker vendor subclass (fixed-stall-vendor etc.) here. */
+  labelFor?: (detection: T) => string;
 }) {
   const imgRef = useRef<HTMLImageElement | null>(null);
   const [naturalSize, setNaturalSize] = useState<{ width: number; height: number } | null>(null);
@@ -54,7 +67,7 @@ export function BoundingBoxOverlay({
       <img
         ref={imgRef}
         src={imageUrl}
-        alt="Uploaded for hawker/encroachment detection"
+        alt="Uploaded for AI defect detection"
         className="block w-full rounded-lg border border-border-subtle"
         onLoad={syncSizes}
       />
@@ -79,9 +92,7 @@ export function BoundingBoxOverlay({
                 className="absolute -top-6 left-0 whitespace-nowrap rounded px-1.5 py-0.5 text-[10px] font-semibold text-white"
                 style={{ backgroundColor: color }}
               >
-                {/* The three underlying vendor classes are intentionally
-                    never shown — see components/report/hawker-analysis.tsx. */}
-                Vendor · {(detection.confidence * 100).toFixed(0)}%
+                {labelFor(detection)}
               </span>
             </div>
           );

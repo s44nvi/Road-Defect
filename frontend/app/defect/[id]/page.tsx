@@ -14,12 +14,13 @@ import { StatusTimeline } from "@/components/dashboard/status-timeline";
 import { StatusHistoryList } from "@/components/incident/status-history-list";
 import { IncidentLocationMap } from "@/components/map/incident-location-map";
 import { EvidenceSection } from "@/components/incident/evidence-section";
-import { AIAnalysisSection } from "@/components/incident/ai-analysis-section";
 import { RoadIntelligenceSection } from "@/components/incident/road-intelligence-section";
 import { ObservationsSection } from "@/components/incident/observations-section";
 import { RepairVerificationSection } from "@/components/incident/repair-verification-section";
+import { BoundingBoxOverlay } from "@/components/hawker/bounding-box-overlay";
 import { defectTypeLabel } from "@/lib/defect-types";
 import { statusTone, statusLabel } from "@/lib/defect-status";
+import { formatIST } from "@/lib/format-datetime";
 import { fetchDefect, updateDefectStatus, ApiError, type DefectDetailResponse } from "@/lib/api";
 
 function Divider() {
@@ -34,16 +35,15 @@ function SectionHeading({ children }: { children: React.ReactNode }) {
   );
 }
 
-// GET /defects/{id} is a real, public endpoint now — fetched directly
-// rather than pulling the full GET /defects list and finding a match.
+// GET /defects/{id} is officer-only as of backend commit 618fbfe (it now
+// carries the reporting citizen's identity) — fetched directly with the
+// officer's bearer token rather than pulling the full GET /defects list.
 //
-// None of the fields below (image, AI detection, human-readable location
-// name, observation count, repair verification) exist on
-// DefectDetailResponse today — every one of these sections is
-// intentionally passed `undefined` and renders its own honest "not
-// available yet" state. Confirm/Reject, the real defect fields, and the
-// real status-history log are the only parts of this page backed by real
-// data.
+// Evidence image, AI confidence/bbox, severity/priority scores, reported_at,
+// and reporter identity are all real now (see lib/api.ts's
+// DefectDetailResponse) — only human-readable location name and
+// observation count still have no backing field, and stay honestly
+// "not available yet".
 function DefectDetailContent({
   name,
   token,
@@ -63,7 +63,7 @@ function DefectDetailContent({
 
   const loadDefect = useCallback(() => {
     setDefectState({ status: "loading" });
-    fetchDefect(defectId)
+    fetchDefect(defectId, token)
       .then((defect) => setDefectState({ status: "ready", defect }))
       .catch((error) =>
         setDefectState({
@@ -71,7 +71,7 @@ function DefectDetailContent({
           message: error instanceof ApiError ? error.message : "Failed to load defect.",
         }),
       );
-  }, [defectId]);
+  }, [defectId, token]);
 
   useEffect(() => {
     loadDefect();
@@ -150,30 +150,60 @@ function DefectDetailContent({
               <Divider />
             </div>
 
-            {/* A. Evidence */}
+            {/* A. Evidence — the citizen's actual uploaded photo, served from
+                the backend's /uploads mount (defect.image_url). Null only
+                for defects with no associated image (e.g. JSON-only
+                POST /reports submissions). */}
             <div className="mt-4">
               <SectionHeading>Evidence</SectionHeading>
-              <EvidenceSection />
+              <EvidenceSection imageUrl={defect.image_url} />
             </div>
 
             <div className="mt-6">
               <Divider />
             </div>
 
-            {/* B. AI Analysis */}
+            {/* B. AI Analysis — real confidence/bbox from the analyze/submit
+                pipeline (re-run at submission time), when the defect was
+                created through it. No separate "AI-detected category" is
+                stored apart from the citizen's own final choice above — the
+                backend never persists one, so none is invented here. */}
             <div className="mt-4">
               <SectionHeading>AI Analysis</SectionHeading>
-              <AIAnalysisSection emptyMessage="AI analysis will appear here once the backend provides an ML result for this incident." />
+              {defect.ai_confidence != null ? (
+                <div className="rounded-lg border border-border-subtle bg-surface-container-low p-4">
+                  <p className="text-sm text-on-surface">
+                    Confidence: <span className="font-semibold">{(defect.ai_confidence * 100).toFixed(1)}%</span>
+                  </p>
+                  {defect.image_url && defect.ai_bbox && (
+                    <div className="mt-3">
+                      <BoundingBoxOverlay
+                        imageUrl={defect.image_url}
+                        detections={[{ bbox: defect.ai_bbox, confidence: defect.ai_confidence }]}
+                      />
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="flex items-start gap-3 rounded-lg border border-dashed border-outline bg-surface-container-low px-4 py-3">
+                  <p className="text-sm text-on-surface-variant">
+                    AI analysis will appear here once the backend provides an ML result for this incident.
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="mt-6">
               <Divider />
             </div>
 
-            {/* C. Road Intelligence */}
+            {/* C. Road Intelligence — real AHP severity/priority scores when
+                the defect was created through the analyze/submit or image
+                pipelines; "Not available yet" for JSON-only reports, which
+                never run AHP. */}
             <div className="mt-4">
               <SectionHeading>Road Intelligence</SectionHeading>
-              <RoadIntelligenceSection />
+              <RoadIntelligenceSection severityScore={defect.ai_severity_score} priorityScore={defect.defect_priority} />
             </div>
 
             <div className="mt-6">
@@ -195,6 +225,29 @@ function DefectDetailContent({
                 </dt>
                 <dd className="mt-1 font-medium text-on-surface">{statusLabel(defect.defect_status)}</dd>
               </div>
+              <div>
+                <dt className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
+                  Reported At
+                </dt>
+                <dd className="mt-1 font-medium text-on-surface">
+                  {defect.reported_at ? (
+                    formatIST(defect.reported_at)
+                  ) : (
+                    <span className="font-normal text-on-surface-variant">Not available yet</span>
+                  )}
+                </dd>
+              </div>
+              {defect.reporter && (
+                <div>
+                  <dt className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">
+                    Reported By
+                  </dt>
+                  <dd className="mt-1 font-medium text-on-surface">
+                    {defect.reporter.full_name}
+                    <span className="block text-xs font-normal text-on-surface-variant">{defect.reporter.email}</span>
+                  </dd>
+                </div>
+              )}
               {/* D. Location */}
               <div className="col-span-2">
                 <dt className="text-xs font-medium uppercase tracking-wide text-on-surface-variant">

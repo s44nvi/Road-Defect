@@ -13,29 +13,41 @@ import { LocationDisplay } from "@/components/ui/location-display";
 import { IncidentLocationMap } from "@/components/map/incident-location-map";
 import { StatusProgress } from "@/components/my-reports/status-progress";
 import { StatusHistoryList } from "@/components/incident/status-history-list";
-import { fetchDefect, ApiError, type DefectDetailResponse } from "@/lib/api";
+import { fetchMyReports, ApiError, type DefectResponseWithPriority } from "@/lib/api";
 import { defectTypeLabel } from "@/lib/defect-types";
 import { statusTone, statusLabel } from "@/lib/defect-status";
 
 // Citizen-facing — no Confirm/Reject or any other officer-only control.
-// GET /defects/{id} is a real, public endpoint, fetched directly rather
-// than pulling the full GET /defects list and finding a match.
-function MyReportDetailContent({ name, defectId }: { name: string; defectId: number }) {
+//
+// GET /defects/{id} became officer-only as of backend commit 618fbfe (it
+// now carries the reporting citizen's name/email to officers), so this
+// page can no longer call it. It falls back to the same GET /reports/mine
+// list the /my-reports index page already fetches, finding the matching
+// row client-side — the same pattern used before /defects/{id} existed.
+// One real consequence: /reports/mine doesn't return image_url, AI
+// confidence/bbox, or reported_at, so citizens can't see those on their
+// own report yet, even though officers now can on theirs.
+function MyReportDetailContent({ name, token, defectId }: { name: string; token: string; defectId: number }) {
   const [state, setState] = useState<
-    { status: "loading" } | { status: "error"; message: string } | { status: "ready"; defect: DefectDetailResponse }
+    | { status: "loading" }
+    | { status: "error"; message: string }
+    | { status: "ready"; defect: DefectResponseWithPriority | null }
   >({ status: "loading" });
 
   const load = useCallback(() => {
     setState({ status: "loading" });
-    fetchDefect(defectId)
-      .then((defect) => setState({ status: "ready", defect }))
+    fetchMyReports(token)
+      .then((defects) => {
+        const match = defects.find((d) => d.defect_id === defectId) ?? null;
+        setState({ status: "ready", defect: match });
+      })
       .catch((error) =>
         setState({
           status: "error",
           message: error instanceof ApiError ? error.message : "Failed to load this report.",
         }),
       );
-  }, [defectId]);
+  }, [defectId, token]);
 
   useEffect(() => {
     load();
@@ -64,6 +76,14 @@ function MyReportDetailContent({ name, defectId }: { name: string; defectId: num
             <Button variant="secondary" className="mt-3" onClick={load}>
               Retry
             </Button>
+          </Card>
+        )}
+
+        {state.status === "ready" && !defect && (
+          <Card className="p-8 text-center">
+            <p className="text-sm text-on-surface-variant">
+              No report with ID #{defectId} was found among your submitted reports.
+            </p>
           </Card>
         )}
 
@@ -136,7 +156,7 @@ export default function MyReportDetailPage({ params }: { params: { id: string } 
 
   return (
     <RequireSession role="citizen">
-      {(session) => <MyReportDetailContent name={session.name} defectId={defectId} />}
+      {(session) => <MyReportDetailContent name={session.name} token={session.token} defectId={defectId} />}
     </RequireSession>
   );
 }

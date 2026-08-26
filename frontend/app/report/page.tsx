@@ -12,23 +12,12 @@ import { LocationPicker, type Coordinates } from "@/components/report/location-p
 import { DefectTypeSelect } from "@/components/report/defect-type-select";
 import { SeveritySelect } from "@/components/report/severity-select";
 import { ReportSuccess } from "@/components/report/report-success";
-import { runHawkerAnalysis, AiResult } from "@/components/report/ai-detection";
-import { submitReport, ApiError, type DefectResponse } from "@/lib/api";
+import { runAnalysis, AiResult, type AnalysisOutcome } from "@/components/report/ai-detection";
+import { submitFinalReport, ApiError, type DefectResponse } from "@/lib/api";
 import type { DefectTypeKey } from "@/lib/defect-types";
 import type { Severity } from "@/components/ui/severity-badge";
 
-// The pothole detector is intentionally absent from the Analyze flow.
-// See components/report/ai-detection.tsx for the documented reason.
-// Only these two require a manual submit (no AI save their report):
-const MANUAL_SUBMIT_CATEGORIES: DefectTypeKey[] = ["manhole", "road_crack", "pothole"];
-
 type AnalysisStatus = "idle" | "loading" | "done";
-
-// Hawker outcome type mirrored from ai-detection for the state shape.
-type HawkerOutcome =
-  | { status: "found"; data: import("@/lib/api").HawkerDetectionResponse }
-  | { status: "not_found" }
-  | { status: "error"; message: string };
 
 interface FieldErrors {
   category?: string;
@@ -42,7 +31,7 @@ function ReportForm({ token }: { token: string }) {
   const [category, setCategory] = useState<DefectTypeKey | null>(null);
   const [severity, setSeverity] = useState<Severity | null>(null);
   const [analysisStatus, setAnalysisStatus] = useState<AnalysisStatus>("idle");
-  const [aiOutcome, setAiOutcome] = useState<HawkerOutcome | null>(null);
+  const [analysisOutcome, setAnalysisOutcome] = useState<AnalysisOutcome | null>(null);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
@@ -52,30 +41,26 @@ function ReportForm({ token }: { token: string }) {
     return <ReportSuccess defect={result} />;
   }
 
-  // Hawker analysis saves its own report server-side — the only categories
-  // that need the manual submit button are the non-AI ones.
-  const needsManualSubmit = category !== null && MANUAL_SUBMIT_CATEGORIES.includes(category);
-
   const canAnalyze = Boolean(image && location) && analysisStatus !== "loading";
+  // POST /reports/submit requires an image_token from a prior successful
+  // analyze call — there is no way to submit without first analyzing,
+  // regardless of which category the citizen ends up choosing.
+  const hasImageToken = analysisOutcome?.status === "found";
 
   const analyzeLabel =
-    analysisStatus === "loading"
-      ? "Analyzing…"
-      : analysisStatus === "done"
-        ? "Analyze Again"
-        : "Analyze with AI";
+    analysisStatus === "loading" ? "Analyzing…" : analysisStatus === "done" ? "Analyze Again" : "Analyze with AI";
 
   async function handleAnalyze() {
     if (!image || !location) return;
     setAnalysisStatus("loading");
-    setAiOutcome(null);
+    setAnalysisOutcome(null);
 
-    const outcome = await runHawkerAnalysis(image, location, token, {
-      onCategoryDetected: (cat) => setCategory(cat),
-      onSeverityDetected: (sev) => setSeverity(sev),
+    const outcome = await runAnalysis(image, location, token, {
+      onCategoryDetected: setCategory,
+      onSeverityDetected: setSeverity,
     });
 
-    setAiOutcome(outcome);
+    setAnalysisOutcome(outcome);
     setAnalysisStatus("done");
   }
 
@@ -89,11 +74,8 @@ function ReportForm({ token }: { token: string }) {
     setFieldErrors((prev) => ({ ...prev, severity: undefined }));
   }
 
-  // Manual submit path for Pothole / Manhole / Crack — Hawker is submitted
-  // automatically by the Analyze call above (the backend persists it).
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
-    if (!needsManualSubmit) return;
 
     const errors: FieldErrors = {};
     if (!category) errors.category = "Select what you spotted.";
@@ -102,21 +84,28 @@ function ReportForm({ token }: { token: string }) {
     setFieldErrors(errors);
     if (Object.keys(errors).length > 0) return;
 
+    if (analysisOutcome?.status !== "found") {
+      setSubmitError("Run Analyze with AI on your photo before submitting — it's required to attach your evidence.");
+      return;
+    }
+
     setSubmitting(true);
     setSubmitError(null);
     try {
-      const defect = await submitReport({
-        defect_type: category!,
-        defect_severity: severity!,
-        latitude: location!.latitude,
-        longitude: location!.longitude,
-      });
+      const defect = await submitFinalReport(
+        {
+          image_token: analysisOutcome.result.image_token,
+          latitude: location!.latitude,
+          longitude: location!.longitude,
+          defect_type: category!,
+          defect_severity: severity!,
+        },
+        token,
+      );
       setResult(defect);
     } catch (error) {
       setSubmitError(
-        error instanceof ApiError
-          ? error.message
-          : "Something went wrong submitting your report. Please try again.",
+        error instanceof ApiError ? error.message : "Something went wrong submitting your report. Please try again.",
       );
     } finally {
       setSubmitting(false);
@@ -147,7 +136,7 @@ function ReportForm({ token }: { token: string }) {
               {analyzeLabel}
             </Button>
             {!image || !location ? (
-              <p className="mt-2 text-xs text-on-surface-variant text-center">
+              <p className="mt-2 text-center text-xs text-on-surface-variant">
                 {!image && !location
                   ? "Upload a photo and set a location to enable AI analysis."
                   : !image
@@ -156,6 +145,13 @@ function ReportForm({ token }: { token: string }) {
               </p>
             ) : null}
           </div>
+
+          {/* AI result — shown right below Analyze, inside the same card */}
+          {analysisOutcome && (
+            <div className="mt-4">
+              <AiResult outcome={analysisOutcome} image={image} />
+            </div>
+          )}
         </Card>
 
         {/* Location card */}
@@ -163,9 +159,7 @@ function ReportForm({ token }: { token: string }) {
           <h2 className="text-base font-semibold text-on-surface">Location</h2>
           <div className="mt-4">
             <LocationPicker value={location} onChange={setLocation} />
-            {fieldErrors.location && (
-              <p className="mt-2 text-xs text-error">{fieldErrors.location}</p>
-            )}
+            {fieldErrors.location && <p className="mt-2 text-xs text-error">{fieldErrors.location}</p>}
           </div>
         </Card>
       </div>
@@ -174,14 +168,11 @@ function ReportForm({ token }: { token: string }) {
       <Card className="p-6">
         <h2 className="text-base font-semibold text-on-surface">What did you spot?</h2>
         <p className="mt-1 text-xs text-on-surface-variant">
-          AI analysis will pre-select the detected category, but you can always change it.
-          Manhole and Crack can also be reported manually without using AI.
+          AI analysis pre-selects the detected category, but you can always change it.
         </p>
         <div className="mt-4">
           <DefectTypeSelect value={category} onChange={handleCategoryChange} />
-          {fieldErrors.category && (
-            <p className="mt-2 text-xs text-error">{fieldErrors.category}</p>
-          )}
+          {fieldErrors.category && <p className="mt-2 text-xs text-error">{fieldErrors.category}</p>}
         </div>
       </Card>
 
@@ -189,59 +180,32 @@ function ReportForm({ token }: { token: string }) {
       <Card className="p-6">
         <h2 className="text-base font-semibold text-on-surface">How severe does this look?</h2>
         <p className="mt-1 text-xs text-on-surface-variant">
-          AI analysis will pre-select severity from the backend result. You can change it.
+          AI analysis pre-selects severity from the backend result, when available. You can change it.
         </p>
         <div className="mt-4">
           <SeveritySelect value={severity} onChange={handleSeverityChange} />
-          {fieldErrors.severity && (
-            <p className="mt-2 text-xs text-error">{fieldErrors.severity}</p>
-          )}
+          {fieldErrors.severity && <p className="mt-2 text-xs text-error">{fieldErrors.severity}</p>}
         </div>
       </Card>
 
-      {/* ── Row 4: AI result (shown after Analyze) ───────────────────── */}
-      {aiOutcome && (
-        <AiResult outcome={aiOutcome} image={image} />
-      )}
-
-      {/* ── Row 5: Manual submit (Pothole / Manhole / Crack only) ────── */}
-      {needsManualSubmit && (
-        <>
-          {submitError && (
-            <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm text-on-error-container">
-              <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
-              <p>{submitError}</p>
-            </div>
-          )}
-
-          <div className="flex items-center justify-between gap-4 rounded-lg bg-surface-container-low px-4 py-3">
-            <p className="text-xs text-on-surface-variant">
-              Your report will be reviewed by a municipal officer before action is taken.
-            </p>
-            <Button type="submit" variant="primary" disabled={submitting}>
-              {submitting ? "Submitting…" : "Submit Report"}
-            </Button>
-          </div>
-        </>
-      )}
-
-      {/* Hawker / Encroachment: POST /ml/hawkers/detect persists the
-          Defect the moment Analyze succeeds — there is no separate
-          create-report call for this category, so no second "Submit"
-          click is needed or offered here. Shown in the same bottom slot
-          as the manual submit bar above so the form still ends with a
-          clear final state, without implying a second action happens. */}
-      {!needsManualSubmit && category === "hawker_encroachment" && aiOutcome?.status === "found" && (
-        <div className="flex items-center justify-between gap-4 rounded-lg bg-primary/10 px-4 py-3">
-          <p className="text-xs text-primary">
-            ✓ Report already submitted — Hawker / Encroachment reports are saved as soon as AI analysis
-            finds a vendor.
-          </p>
-          <Button type="button" variant="primary" disabled>
-            Already Submitted
-          </Button>
+      {/* ── Row 4: Review + final submit ─────────────────────────────── */}
+      {submitError && (
+        <div className="flex items-start gap-3 rounded-lg border border-error/30 bg-error-container px-4 py-3 text-sm text-on-error-container">
+          <AlertIcon className="mt-0.5 h-4 w-4 shrink-0" />
+          <p>{submitError}</p>
         </div>
       )}
+
+      <div className="flex items-center justify-between gap-4 rounded-lg bg-surface-container-low px-4 py-3">
+        <p className="text-xs text-on-surface-variant">
+          {hasImageToken
+            ? "Your report will be reviewed by a municipal officer before action is taken."
+            : "Run Analyze with AI above to attach your photo before submitting."}
+        </p>
+        <Button type="submit" variant="primary" disabled={submitting || !hasImageToken}>
+          {submitting ? "Submitting…" : "Submit Report"}
+        </Button>
+      </div>
     </form>
   );
 }

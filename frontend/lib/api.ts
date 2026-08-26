@@ -25,10 +25,36 @@ export interface DefectResponseWithPriority extends DefectResponse {
   defect_priority: number | null;
 }
 
-/** `GET /defects/{defect_id}` — DefectResponse plus the road-health link. */
+/** The citizen who submitted a defect, as exposed to officers only (see
+ * DefectDetailResponse.reporter). */
+export interface ReporterPublic {
+  id: number;
+  full_name: string;
+  email: string;
+}
+
+/** `GET /defects/{defect_id}` — DefectResponse plus the road-health link,
+ * AI detection metadata, evidence image, and reporter identity. As of
+ * backend commit 618fbfe this route is officer-only (it now carries
+ * citizen PII via `reporter`) — see fetchDefect() below. */
 export interface DefectDetailResponse extends DefectResponse {
   road_segment_id: string | null;
   is_test_data?: boolean;
+  reporter: ReporterPublic | null;
+  ai_confidence: number | null;
+  ai_bbox: [number, number, number, number] | null;
+  ai_severity_score: number | null;
+  defect_priority: number | null;
+  image_path: string | null;
+  /** Browser-fetchable URL (served under /uploads/...) — null when the
+   * defect has no associated image (e.g. JSON-only reports). */
+  image_url: string | null;
+  /** ISO 8601, already converted to Asia/Kolkata by the backend
+   * (timezone_utils.to_ist) — still run through lib/format-datetime.ts's
+   * formatIST() for display, which works correctly regardless of the
+   * offset the string already carries. Null only if a defect somehow has
+   * no status history at all. */
+  reported_at: string | null;
 }
 
 export class ApiError extends Error {
@@ -80,10 +106,13 @@ export function fetchDefects(): Promise<DefectResponseWithPriority[]> {
   return apiFetch<DefectResponseWithPriority[]>("/defects");
 }
 
-/** GET /defects/{defect_id} — single-defect detail. Public, no auth
- * required (see the live OpenAPI schema's description on this route). */
-export function fetchDefect(defectId: number): Promise<DefectDetailResponse> {
-  return apiFetch<DefectDetailResponse>(`/defects/${defectId}`);
+/** GET /defects/{defect_id} — single-defect detail. As of backend commit
+ * 618fbfe this is officer-only (the response now includes the reporting
+ * citizen's name/email) — requires the officer's bearer token. Citizens
+ * viewing their own report use fetchMyReports() + client-side lookup
+ * instead (see app/my-reports/[id]/page.tsx). */
+export function fetchDefect(defectId: number, token: string): Promise<DefectDetailResponse> {
+  return apiFetch<DefectDetailResponse>(`/defects/${defectId}`, { token });
 }
 
 // Mirrors backend/app/schemas.py::ReportCreate field-for-field. This is the
@@ -104,6 +133,107 @@ export function submitReport(payload: ReportCreatePayload): Promise<DefectRespon
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
+}
+
+// ---------------------------------------------------------------------
+// Two-step citizen reporting pipeline (backend commit 618fbfe) —
+// POST /reports/analyze (pure AI analysis, never creates a Defect) then
+// POST /reports/submit (the citizen's actual final creation step, using
+// the image_token from analyze). This finally makes "Analyze" and
+// "Submit" two genuinely separate backend calls for every category,
+// including Hawker/Encroachment — unlike the older POST /ml/hawkers/detect
+// and POST /reports/image, which persist immediately on detection. Both
+// require the citizen's bearer token.
+
+/** POST /reports/analyze response. `category`/`confidence`/`bbox` are all
+ * `null` together when nothing was confidently detected across either the
+ * pothole or hawker detector streams — never a fabricated guess. */
+export interface AnalyzeImageResponse {
+  image_token: string;
+  category: string | null;
+  confidence: number | null;
+  bbox: [number, number, number, number] | null;
+  ai_severity: string | null;
+  ai_severity_score: number | null;
+  model_source: string | null;
+}
+
+export interface AnalyzeImagePayload {
+  file: File;
+  /** Optional — enables AI severity scoring (Road Intelligence/AHP) when
+   * provided; category/confidence/bbox are still returned without it. */
+  latitude?: number;
+  longitude?: number;
+}
+
+export function analyzeReportImage(payload: AnalyzeImagePayload, token: string): Promise<AnalyzeImageResponse> {
+  const form = new FormData();
+  form.append("file", payload.file);
+  if (payload.latitude != null) form.append("latitude", String(payload.latitude));
+  if (payload.longitude != null) form.append("longitude", String(payload.longitude));
+  return apiFetch<AnalyzeImageResponse>("/reports/analyze", {
+    method: "POST",
+    body: form,
+    token,
+  });
+}
+
+/** Body of POST /reports/submit. `image_token` must come from a prior
+ * analyzeReportImage() call. defect_type/defect_severity are the
+ * citizen's final choice — may differ from the AI suggestion; the citizen
+ * always has the final say, never silently overridden. */
+export interface SubmitReportPayload {
+  image_token: string;
+  latitude: number;
+  longitude: number;
+  defect_type: string;
+  defect_severity: string;
+}
+
+/** POST /reports/submit — the real, final report-creation call. Re-runs
+ * detection on the already-persisted image server-side for AI metadata +
+ * AHP scoring, but always stores the citizen's chosen category/severity. */
+export function submitFinalReport(payload: SubmitReportPayload, token: string): Promise<ImageReportResponse> {
+  return apiFetch<ImageReportResponse>("/reports/submit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+    token,
+  });
+}
+
+// ---------------------------------------------------------------------
+// Nearby reports — GET /reports/nearby. Read-only location search with
+// real backend-computed haversine distance (road_health.geo.haversine_km),
+// never a client-side approximation. Requires the citizen's bearer token.
+export interface NearbyIncidentResponse {
+  defect_id: number;
+  defect_type: string;
+  defect_severity: string;
+  defect_priority: number | null;
+  latitude: number;
+  longitude: number;
+  distance_km: number;
+  defect_status: string;
+  reported_at: string | null;
+  image_url: string | null;
+  road_segment_id: string | null;
+  nearest_road: string | null;
+}
+
+export interface NearbyReportsQuery {
+  latitude: number;
+  longitude: number;
+  radiusKm: number;
+}
+
+export function fetchNearbyReports(query: NearbyReportsQuery, token: string): Promise<NearbyIncidentResponse[]> {
+  const params = new URLSearchParams({
+    latitude: String(query.latitude),
+    longitude: String(query.longitude),
+    radius_km: String(query.radiusKm),
+  });
+  return apiFetch<NearbyIncidentResponse[]>(`/reports/nearby?${params.toString()}`, { token });
 }
 
 // ---------------------------------------------------------------------
@@ -224,10 +354,11 @@ export function fetchMyReports(token: string): Promise<DefectResponseWithPriorit
 // ("ModelUnavailableError") and *never* returns a fake inference result.
 // Callers must surface that 503 as an honest "not available yet" state,
 // not retry it silently or fall back to fabricated data.
-export interface ImageReportResponse extends DefectDetailResponse {
-  defect_priority: number | null;
-  image_path: string | null;
-}
+// Now a plain alias — `defect_priority`/`image_path`/`ai_*`/`image_url` all
+// live directly on DefectDetailResponse as of backend commit 618fbfe (per
+// its own docstring: "this subclass exists only for backwards-compat
+// naming/import stability").
+export type ImageReportResponse = DefectDetailResponse;
 
 export interface ImageReportPayload {
   latitude: number;
