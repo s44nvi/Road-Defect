@@ -34,25 +34,27 @@ def test_reporting_a_defect_seeds_its_history_with_one_entry(client):
 def test_every_successful_status_change_appends_a_history_row(client):
     defect_id = _create_defect(client)
 
-    client.patch(f"/defects/{defect_id}/status", json={"status": "under_review", "note": "looking into it"})
-    client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed", "note": "confirmed on site"})
+    client.patch(
+        f"/defects/{defect_id}/status",
+        json={"status": "confirmed", "note": "confirmed on site"},
+    )
 
     history = client.get(f"/defects/{defect_id}/status-history").json()
 
-    assert len(history) == 3
-    assert [entry["new_status"] for entry in history] == ["reported", "under_review", "confirmed"]
+    assert len(history) == 2
+    assert [entry["new_status"] for entry in history] == ["reported", "confirmed"]
 
 
 def test_history_entry_records_old_and_new_status(client):
     defect_id = _create_defect(client)
 
-    client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
+    client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
 
     history = client.get(f"/defects/{defect_id}/status-history").json()
     last = history[-1]
 
     assert last["old_status"] == "reported"
-    assert last["new_status"] == "under_review"
+    assert last["new_status"] == "confirmed"
 
 
 def test_history_entry_records_the_note(client):
@@ -60,7 +62,7 @@ def test_history_entry_records_the_note(client):
 
     client.patch(
         f"/defects/{defect_id}/status",
-        json={"status": "under_review", "note": "Verified by municipal officer"},
+        json={"status": "confirmed", "note": "Verified by municipal officer"},
     )
 
     history = client.get(f"/defects/{defect_id}/status-history").json()
@@ -73,7 +75,7 @@ def test_history_entry_records_changed_by_from_request_body(client):
 
     client.patch(
         f"/defects/{defect_id}/status",
-        json={"status": "under_review", "changedBy": "officer_priya"},
+        json={"status": "confirmed", "changedBy": "officer_priya"},
     )
 
     history = client.get(f"/defects/{defect_id}/status-history").json()
@@ -86,7 +88,7 @@ def test_history_entry_records_changed_by_from_header_when_body_omits_it(client)
 
     client.patch(
         f"/defects/{defect_id}/status",
-        json={"status": "under_review"},
+        json={"status": "confirmed"},
         headers={"X-Officer-Id": "officer_rahul"},
     )
 
@@ -103,7 +105,7 @@ def test_changed_by_is_nullable_when_no_identity_is_supplied(client):
     """
     defect_id = _create_defect(client)
 
-    response = client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
+    response = client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
     assert response.status_code == 200
 
     history = client.get(f"/defects/{defect_id}/status-history").json()
@@ -127,9 +129,9 @@ def test_a_rejected_status_change_does_not_create_a_history_row(client):
 def test_history_is_ordered_oldest_first(client):
     defect_id = _create_defect(client)
 
-    client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
     client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
-    client.patch(f"/defects/{defect_id}/status", json={"status": "assigned"})
+    client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
+    client.patch(f"/defects/{defect_id}/status", json={"status": "in_progress"})
 
     history = client.get(f"/defects/{defect_id}/status-history").json()
     timestamps = [entry["changed_at"] for entry in history]

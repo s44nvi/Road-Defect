@@ -41,8 +41,7 @@ def test_new_report_starts_in_reported_status(client):
 @pytest.mark.parametrize(
     "path",
     [
-        ["under_review", "confirmed", "assigned", "repair_in_progress", "resolved"],
-        ["under_review", "rejected"],
+        ["confirmed", "in_progress", "resolved"],
         ["rejected"],
     ],
 )
@@ -61,7 +60,7 @@ def test_the_full_normal_workflow_path_is_accepted(client, path):
 
 @pytest.mark.parametrize(
     "bad_status",
-    ["done", "DELETED", "in_progress", "", "reported; DROP TABLE defects"],
+    ["done", "DELETED", "", "reported; DROP TABLE defects"],
 )
 def test_arbitrary_or_unknown_status_strings_are_rejected(client, bad_status):
     defect_id = _create_defect(client)
@@ -76,7 +75,7 @@ def test_arbitrary_or_unknown_status_strings_are_rejected(client, bad_status):
 
 @pytest.mark.parametrize(
     "illegal_target",
-    ["assigned", "repair_in_progress", "resolved"],
+    ["in_progress", "resolved"],
 )
 def test_skipping_ahead_in_the_workflow_is_rejected(client, illegal_target):
     """A freshly reported defect cannot jump straight to a later stage."""
@@ -93,10 +92,10 @@ def test_skipping_ahead_in_the_workflow_is_rejected(client, illegal_target):
 def test_resolved_is_a_terminal_status(client):
     defect_id = _create_defect(client)
 
-    for status in ["under_review", "confirmed", "assigned", "repair_in_progress", "resolved"]:
+    for status in ["confirmed", "confirmed", "in_progress", "in_progress", "resolved"]:
         assert client.patch(f"/defects/{defect_id}/status", json={"status": status}).status_code == 200
 
-    response = client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
+    response = client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
 
     assert response.status_code == 409
 
@@ -106,7 +105,7 @@ def test_rejected_is_a_terminal_status(client):
 
     assert client.patch(f"/defects/{defect_id}/status", json={"status": "rejected"}).status_code == 200
 
-    response = client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
+    response = client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
 
     assert response.status_code == 409
 
@@ -120,12 +119,12 @@ def test_status_update_on_unknown_defect_returns_404(client):
 def test_setting_the_same_status_again_is_an_idempotent_no_op(client):
     defect_id = _create_defect(client)
 
-    first = client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
-    second = client.patch(f"/defects/{defect_id}/status", json={"status": "under_review"})
+    first = client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
+    second = client.patch(f"/defects/{defect_id}/status", json={"status": "confirmed"})
 
     assert first.status_code == 200
     assert second.status_code == 200
-    assert second.json()["defect_status"] == "under_review"
+    assert second.json()["defect_status"] == "confirmed"
 
 
 # ---------------------------------------------------------------------------
@@ -134,7 +133,7 @@ def test_setting_the_same_status_again_is_an_idempotent_no_op(client):
 def test_legacy_patch_still_returns_the_original_response_shape(client):
     defect_id = _create_defect(client)
 
-    response = client.patch(f"/defects/{defect_id}", json={"defect_status": "under_review"})
+    response = client.patch(f"/defects/{defect_id}", json={"defect_status": "confirmed"})
 
     assert response.status_code == 200
     body = response.json()
@@ -147,7 +146,7 @@ def test_legacy_patch_still_returns_the_original_response_shape(client):
         "latitude",
         "longitude",
     }
-    assert body["defect_status"] == "under_review"
+    assert body["defect_status"] == "confirmed"
 
 
 def test_legacy_confirm_button_one_step_reported_to_confirmed_still_works(client):
@@ -189,10 +188,10 @@ def test_legacy_endpoint_still_enforces_illegal_transitions(client):
     """
     defect_id = _create_defect(client)
 
-    for status in ["under_review", "confirmed", "assigned", "repair_in_progress", "resolved"]:
+    for status in ["confirmed", "confirmed", "in_progress", "in_progress", "resolved"]:
         assert client.patch(f"/defects/{defect_id}/status", json={"status": status}).status_code == 200
 
-    response = client.patch(f"/defects/{defect_id}", json={"defect_status": "under_review"})
+    response = client.patch(f"/defects/{defect_id}", json={"defect_status": "confirmed"})
 
     assert response.status_code == 409
 

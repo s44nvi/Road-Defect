@@ -26,19 +26,15 @@ from __future__ import annotations
 # and normalizes, so an officer frontend sending "CONFIRMED" or "confirmed"
 # both work.
 STATUS_REPORTED = "reported"
-STATUS_UNDER_REVIEW = "under_review"
 STATUS_CONFIRMED = "confirmed"
-STATUS_ASSIGNED = "assigned"
-STATUS_REPAIR_IN_PROGRESS = "repair_in_progress"
+STATUS_IN_PROGRESS = "in_progress"
 STATUS_RESOLVED = "resolved"
 STATUS_REJECTED = "rejected"
 
 ALL_STATUSES: tuple[str, ...] = (
     STATUS_REPORTED,
-    STATUS_UNDER_REVIEW,
     STATUS_CONFIRMED,
-    STATUS_ASSIGNED,
-    STATUS_REPAIR_IN_PROGRESS,
+    STATUS_IN_PROGRESS,
     STATUS_RESOLVED,
     STATUS_REJECTED,
 )
@@ -48,10 +44,8 @@ ALL_STATUSES: tuple[str, ...] = (
 ACTIVE_STATUSES: frozenset[str] = frozenset(
     {
         STATUS_REPORTED,
-        STATUS_UNDER_REVIEW,
         STATUS_CONFIRMED,
-        STATUS_ASSIGNED,
-        STATUS_REPAIR_IN_PROGRESS,
+        STATUS_IN_PROGRESS,
     }
 )
 

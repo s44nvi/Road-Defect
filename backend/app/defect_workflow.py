@@ -34,13 +34,11 @@ from sqlalchemy.orm import Session
 from .models import Defect, DefectStatusHistory
 from .road_health.config import (
     ALL_STATUSES,
-    STATUS_ASSIGNED,
     STATUS_CONFIRMED,
+    STATUS_IN_PROGRESS,
     STATUS_REJECTED,
-    STATUS_REPAIR_IN_PROGRESS,
     STATUS_REPORTED,
     STATUS_RESOLVED,
-    STATUS_UNDER_REVIEW,
 )
 
 # ---------------------------------------------------------------------------
@@ -57,11 +55,9 @@ from .road_health.config import (
 # dismissed is closed. Re-opening would need a new report, which keeps the
 # status history of a single defect a straight line.
 ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
-    STATUS_REPORTED: frozenset({STATUS_UNDER_REVIEW, STATUS_REJECTED}),
-    STATUS_UNDER_REVIEW: frozenset({STATUS_CONFIRMED, STATUS_REJECTED}),
-    STATUS_CONFIRMED: frozenset({STATUS_ASSIGNED}),
-    STATUS_ASSIGNED: frozenset({STATUS_REPAIR_IN_PROGRESS}),
-    STATUS_REPAIR_IN_PROGRESS: frozenset({STATUS_RESOLVED}),
+    STATUS_REPORTED: frozenset({STATUS_CONFIRMED, STATUS_REJECTED}),
+    STATUS_CONFIRMED: frozenset({STATUS_IN_PROGRESS}),
+    STATUS_IN_PROGRESS: frozenset({STATUS_RESOLVED}),
     STATUS_RESOLVED: frozenset(),
     STATUS_REJECTED: frozenset(),
 }

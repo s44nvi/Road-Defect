@@ -42,7 +42,7 @@ def test_resolving_a_defect_through_the_api_improves_the_segments_health(
 
     # Walk the real workflow to 'resolved' rather than writing the status
     # directly, so this exercises the same path an officer would use.
-    for status in ["under_review", "confirmed", "assigned", "repair_in_progress", "resolved"]:
+    for status in ["confirmed", "confirmed", "in_progress", "in_progress", "resolved"]:
         response = client.patch(f"/defects/{defect.id}/status", json={"status": status})
         assert response.status_code == 200
 

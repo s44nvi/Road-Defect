@@ -41,7 +41,7 @@ def test_unknown_severity_uses_the_documented_fallback():
 # ---------------------------------------------------------------------------
 @pytest.mark.parametrize(
     "status",
-    ["reported", "under_review", "confirmed", "assigned", "repair_in_progress"],
+    ["reported", "confirmed", "confirmed", "in_progress", "in_progress"],
 )
 def test_every_active_status_contributes_to_the_load(status):
     assert active_issue_load([DefectLoad(status=status, severity="critical")]) == 3.0
@@ -169,7 +169,7 @@ def test_issue_counts_add_up():
         [
             DefectLoad("reported", "critical"),
             DefectLoad("confirmed", "medium"),
-            DefectLoad("repair_in_progress", "low"),
+            DefectLoad("in_progress", "low"),
             DefectLoad("resolved", "critical"),
             DefectLoad("rejected", "medium"),
         ],
