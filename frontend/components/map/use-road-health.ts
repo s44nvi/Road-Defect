@@ -11,8 +11,8 @@ type RoadHealthState =
 
 // Adapts one GeoJSON feature from GET /road-health/segments into the
 // internal RoadHealthSegment shape the map/dashboard components already
-// expect — a rename layer, not a data transformation: every value here is
-// read straight off the real SegmentProperties response.
+// expect. Every value is read straight off the real SegmentProperties
+// response — no fabricated data, no mock fallback.
 function toRoadHealthSegment(feature: SegmentFeature): RoadHealthSegment {
   const p = feature.properties;
   return {
@@ -27,8 +27,18 @@ function toRoadHealthSegment(feature: SegmentFeature): RoadHealthSegment {
     medium_issues: p.medium_issues,
     low_issues: p.low_issues,
     geometry: feature.geometry,
+    // MCGM-specific fields — null for OSM/dev segments.
+    geometry_source: p.geometry_source ?? null,
+    mcgm_id: p.mcgm_id ?? null,
+    ward: p.ward ?? null,
+    work_status: p.work_status ?? null,
   };
 }
+
+// Scoped to the 10 real MCGM demo roads via the geometry_source filter.
+// Removing the argument falls back to all segments (OSM + MCGM) — do not
+// remove it without also updating the MCGM map feature.
+const MCGM_SOURCE = "mcgm_demo_csv_v1";
 
 export function useRoadHealth(): RoadHealthState & { reload: () => void } {
   const [state, setState] = useState<RoadHealthState>({ status: "loading" });
@@ -38,7 +48,7 @@ export function useRoadHealth(): RoadHealthState & { reload: () => void } {
     let cancelled = false;
     setState({ status: "loading" });
 
-    fetchRoadHealthSegments()
+    fetchRoadHealthSegments(MCGM_SOURCE)
       .then((collection) => {
         if (!cancelled) {
           setState({ status: "ready", segments: collection.features.map(toRoadHealthSegment) });

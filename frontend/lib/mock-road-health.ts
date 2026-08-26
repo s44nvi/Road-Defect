@@ -35,6 +35,10 @@ export const ROAD_SEGMENT_FIXTURE: RoadHealthSegment[] = [
         [72.882, 19.081],
       ],
     },
+    geometry_source: null,
+    mcgm_id: null,
+    ward: null,
+    work_status: null,
   },
   {
     road_segment_id: "mock-2",
@@ -54,6 +58,10 @@ export const ROAD_SEGMENT_FIXTURE: RoadHealthSegment[] = [
         [72.87, 19.065],
       ],
     },
+    geometry_source: null,
+    mcgm_id: null,
+    ward: null,
+    work_status: null,
   },
   {
     road_segment_id: "mock-3",
@@ -73,5 +81,9 @@ export const ROAD_SEGMENT_FIXTURE: RoadHealthSegment[] = [
         [72.855, 19.035],
       ],
     },
+    geometry_source: null,
+    mcgm_id: null,
+    ward: null,
+    work_status: null,
   },
 ];

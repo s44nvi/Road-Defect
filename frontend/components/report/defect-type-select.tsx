@@ -1,27 +1,38 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { PotholeIcon, CrackIcon, DebrisIcon, ManholeIcon, CheckCircleIcon } from "@/components/icons";
+import { PotholeIcon, ManholeIcon, CrackIcon, PersonIcon, CheckCircleIcon } from "@/components/icons";
 import type { DefectTypeKey } from "@/lib/defect-types";
 
-// The RoadSense detection taxonomy is exactly these four types (see
-// lib/defect-types.ts). There is no backend endpoint that infers a defect
-// type from an uploaded photo — road_intelligence/analyze takes
-// pre-computed YOLO detection output (class, confidence, bbox) as input,
-// not a raw image — so the citizen picks the type manually instead of the
-// UI pretending an AI model looked at the photo.
-const OPTIONS: { value: DefectTypeKey; label: string; icon: typeof PotholeIcon }[] = [
+// Exactly RoadSense's four supported citizen-report categories.
+// All four are always clickable — the citizen can always change their
+// selection. AI analysis may pre-select a category by passing `value`,
+// but that is just an initial state, not a lock.
+const OPTIONS: {
+  value: DefectTypeKey;
+  label: string;
+  description?: string;
+  icon: typeof PotholeIcon;
+}[] = [
   { value: "pothole", label: "Pothole", icon: PotholeIcon },
-  { value: "road_crack", label: "Road Crack", icon: CrackIcon },
-  { value: "road_debris", label: "Road Debris", icon: DebrisIcon },
   { value: "manhole", label: "Manhole", icon: ManholeIcon },
+  { value: "road_crack", label: "Crack", icon: CrackIcon },
+  {
+    value: "hawker_encroachment",
+    label: "Hawker / Encroachment",
+    description: "Vendors or structures encroaching on roads",
+    icon: PersonIcon,
+  },
 ];
 
 export function DefectTypeSelect({
   value,
   onChange,
 }: {
+  /** The currently selected category — AI-pre-selected or citizen-chosen.
+   * `null` before either has happened. */
   value: DefectTypeKey | null;
+  /** Fires for any of the four categories. */
   onChange: (value: DefectTypeKey) => void;
 }) {
   return (
@@ -43,6 +54,9 @@ export function DefectTypeSelect({
           >
             <Icon className={cn("h-6 w-6", selected ? "text-primary" : "text-on-surface-variant")} />
             <span className="text-sm font-medium text-on-surface">{option.label}</span>
+            {option.description && (
+              <span className="text-xs leading-tight text-on-surface-variant">{option.description}</span>
+            )}
             {selected && (
               <span className="absolute right-2 top-2 text-primary">
                 <CheckCircleIcon className="h-4 w-4" />

@@ -14,7 +14,7 @@ import { SearchIcon, CloseIcon } from "@/components/icons";
 import type { DefectResponse } from "@/lib/api";
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, medium: 1, low: 2 };
-const TYPE_OPTIONS: DefectTypeKey[] = ["pothole", "road_crack", "road_debris", "manhole"];
+const TYPE_OPTIONS: DefectTypeKey[] = ["pothole", "road_crack", "manhole", "hawker_encroachment"];
 
 type SortKey = "newest" | "severity";
 

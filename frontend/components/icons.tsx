@@ -136,6 +136,26 @@ export function ManholeIcon(props: IconProps) {
   );
 }
 
+export function WaterIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M3 15c1.5 1.5 3 1.5 4.5 0s3-1.5 4.5 0 3 1.5 4.5 0 3-1.5 4.5 0" />
+      <path d="M3 19c1.5 1.5 3 1.5 4.5 0s3-1.5 4.5 0 3 1.5 4.5 0 3-1.5 4.5 0" />
+      <path d="M12 3c1.5 2.5 3 5 3 7a3 3 0 1 1-6 0c0-2 1.5-4.5 3-7z" />
+    </svg>
+  );
+}
+
+export function MoreIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="5" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="12" cy="12" r="1.25" fill="currentColor" stroke="none" />
+      <circle cx="19" cy="12" r="1.25" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
 export function CameraIcon(props: IconProps) {
   return (
     <svg {...base(props)}>

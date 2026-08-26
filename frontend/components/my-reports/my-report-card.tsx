@@ -4,9 +4,20 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { defectTypeLabel } from "@/lib/defect-types";
 import { statusTone, statusLabel } from "@/lib/defect-status";
+import { formatDistanceAway } from "@/lib/geo";
 import type { DefectResponse } from "@/lib/api";
 
-export function MyReportCard({ defect }: { defect: DefectResponse }) {
+export function MyReportCard({
+  defect,
+  distanceKm,
+}: {
+  defect: DefectResponse;
+  /** Real haversine distance from a searched/current location — see
+   * lib/geo.ts. Omitted entirely (not "0 km") when no reference point is
+   * set. There is no report creation timestamp anywhere in the current
+   * backend contract (see lib/format-datetime.ts), so none is shown here. */
+  distanceKm?: number;
+}) {
   return (
     <Card className="p-5">
       <div className="flex items-start justify-between gap-2">
@@ -24,7 +35,7 @@ export function MyReportCard({ defect }: { defect: DefectResponse }) {
       <div className="mt-3 flex items-center justify-between">
         <SeverityBadge severity={defect.defect_severity} />
         <span className="text-xs text-on-surface-variant">
-          {defect.latitude.toFixed(4)}, {defect.longitude.toFixed(4)}
+          {distanceKm != null ? formatDistanceAway(distanceKm) : `${defect.latitude.toFixed(4)}, ${defect.longitude.toFixed(4)}`}
         </span>
       </div>
 

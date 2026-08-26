@@ -5,13 +5,15 @@ import { SeverityBadge } from "@/components/ui/severity-badge";
 import { CheckCircleIcon } from "@/components/icons";
 import { AIAnalysisSection } from "@/components/incident/ai-analysis-section";
 import { defectTypeLabel } from "@/lib/defect-types";
-import type { ImageReportResponse } from "@/lib/api";
+import type { DefectResponse } from "@/lib/api";
 
-// Every field shown here comes directly off the ImageReportResponse the
-// backend returned from POST /reports/image — nothing here is invented.
-// The backend always creates a new row, so there's no duplicate/merge
-// state to special-case.
-export function ReportSuccess({ defect }: { defect: ImageReportResponse }) {
+// Every field shown here comes directly off whichever real backend
+// response created this defect — POST /reports/image for the pothole/
+// crack/etc. pipeline, or the plain JSON POST /reports for Hawker /
+// Encroachment (see app/report/page.tsx's handleSubmit). Both response
+// shapes are supersets of DefectResponse, so this component only reads
+// the fields common to both; nothing here is invented.
+export function ReportSuccess({ defect }: { defect: DefectResponse }) {
   return (
     <Card className="mx-auto max-w-lg p-8 text-center">
       <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10 text-primary">

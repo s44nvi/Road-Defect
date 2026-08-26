@@ -8,6 +8,7 @@ import { MUMBAI_CENTER, OSM_STYLE } from "@/components/map/osm-style";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { CrosshairIcon } from "@/components/icons";
+import { LocationSearchInput } from "./location-search-input";
 
 export interface Coordinates {
   latitude: number;
@@ -125,6 +126,10 @@ export function LocationPicker({
 
   return (
     <div className="space-y-3">
+      <LocationSearchInput
+        onSelect={(result) => onChangeRef.current({ latitude: result.latitude, longitude: result.longitude })}
+      />
+
       <div className="h-56 overflow-hidden rounded-lg border border-border-subtle">
         <div ref={containerRef} className="h-full w-full" />
       </div>
@@ -170,7 +175,7 @@ export function LocationPicker({
         </div>
       </div>
       <p className="text-xs text-on-surface-variant">
-        Click or drag the pin on the map, or enter coordinates directly.
+        Search for a place, click or drag the pin on the map, or enter coordinates directly.
       </p>
     </div>
   );

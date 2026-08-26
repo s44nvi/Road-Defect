@@ -56,9 +56,9 @@ function DefectDetailContent({
   const [defectState, setDefectState] = useState<
     { status: "loading" } | { status: "error"; message: string } | { status: "ready"; defect: DefectDetailResponse }
   >({ status: "loading" });
-  const [updating, setUpdating] = useState<"confirmed" | "rejected" | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
   const [updateError, setUpdateError] = useState<string | null>(null);
-  const [justUpdated, setJustUpdated] = useState<"confirmed" | "rejected" | null>(null);
+  const [justUpdated, setJustUpdated] = useState<string | null>(null);
   const [historyKey, setHistoryKey] = useState(0);
 
   const loadDefect = useCallback(() => {
@@ -83,7 +83,7 @@ function DefectDetailContent({
     return () => clearTimeout(timer);
   }, [justUpdated]);
 
-  async function handleUpdate(nextStatus: "confirmed" | "rejected") {
+  async function handleUpdate(nextStatus: string) {
     if (updating) return; // guard against double-clicks while a request is in flight
     setUpdating(nextStatus);
     setUpdateError(null);
@@ -260,28 +260,74 @@ function DefectDetailContent({
 
               {justUpdated && !updateError && (
                 <p className="mb-3 rounded-md bg-primary/10 px-3 py-2 text-sm text-primary">
-                  ✓ Incident marked {justUpdated}.
+                  ✓ Incident marked {statusLabel(justUpdated).toLowerCase()}.
                 </p>
               )}
 
-              <div className="flex gap-3">
-                <Button
-                  variant="primary"
-                  disabled={updating !== null}
-                  aria-busy={updating === "confirmed"}
-                  onClick={() => handleUpdate("confirmed")}
-                >
-                  {updating === "confirmed" ? "Confirming…" : "Confirm Incident"}
-                </Button>
-                <Button
-                  variant="destructive"
-                  disabled={updating !== null}
-                  aria-busy={updating === "rejected"}
-                  onClick={() => handleUpdate("rejected")}
-                >
-                  {updating === "rejected" ? "Rejecting…" : "Reject"}
-                </Button>
-              </div>
+              {/* Real backend lifecycle: reported -> confirmed -> in_progress
+                  -> resolved, or rejected at the reported stage. Only the
+                  next real action for the CURRENT status is ever offered —
+                  Confirm never reappears once a report has moved past it. */}
+              {(() => {
+                const normalized = defect.defect_status.trim().toLowerCase();
+                if (normalized.includes("reject") || normalized.includes("resolv")) {
+                  return (
+                    <p className="text-sm text-on-surface-variant">
+                      This incident&apos;s workflow is complete — no further action is available.
+                    </p>
+                  );
+                }
+                if (normalized.includes("progress")) {
+                  return (
+                    <div className="flex gap-3">
+                      <Button
+                        variant="primary"
+                        disabled={updating !== null}
+                        aria-busy={updating === "resolved"}
+                        onClick={() => handleUpdate("resolved")}
+                      >
+                        {updating === "resolved" ? "Marking Resolved…" : "Mark Resolved"}
+                      </Button>
+                    </div>
+                  );
+                }
+                if (normalized.includes("confirm")) {
+                  return (
+                    <div className="flex gap-3">
+                      <Button
+                        variant="primary"
+                        disabled={updating !== null}
+                        aria-busy={updating === "in_progress"}
+                        onClick={() => handleUpdate("in_progress")}
+                      >
+                        {updating === "in_progress" ? "Updating…" : "Mark In Progress"}
+                      </Button>
+                    </div>
+                  );
+                }
+                // "reported" (or any unrecognized status) — the only stage
+                // Confirm/Reject are still valid actions.
+                return (
+                  <div className="flex gap-3">
+                    <Button
+                      variant="primary"
+                      disabled={updating !== null}
+                      aria-busy={updating === "confirmed"}
+                      onClick={() => handleUpdate("confirmed")}
+                    >
+                      {updating === "confirmed" ? "Confirming…" : "Confirm Incident"}
+                    </Button>
+                    <Button
+                      variant="destructive"
+                      disabled={updating !== null}
+                      aria-busy={updating === "rejected"}
+                      onClick={() => handleUpdate("rejected")}
+                    >
+                      {updating === "rejected" ? "Rejecting…" : "Reject"}
+                    </Button>
+                  </div>
+                );
+              })()}
             </div>
           </Card>
         )}

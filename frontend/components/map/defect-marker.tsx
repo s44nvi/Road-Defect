@@ -1,14 +1,14 @@
 import { cn } from "@/lib/cn";
-import { normalizeDefectType } from "@/lib/defect-types";
+import { normalizeDefectType, type DefectTypeKey } from "@/lib/defect-types";
 import { normalizeSeverity, type Severity } from "@/components/ui/severity-badge";
-import { PotholeIcon, CrackIcon, DebrisIcon, ManholeIcon } from "@/components/icons";
+import { PotholeIcon, CrackIcon, ManholeIcon, PersonIcon } from "@/components/icons";
 
-const typeIcon = {
+const typeIcon: Record<DefectTypeKey, typeof PotholeIcon> = {
   pothole: PotholeIcon,
   road_crack: CrackIcon,
-  road_debris: DebrisIcon,
   manhole: ManholeIcon,
-} as const;
+  hawker_encroachment: PersonIcon,
+};
 
 const severityDotClass: Record<Severity, string> = {
   critical: "bg-error border-error",

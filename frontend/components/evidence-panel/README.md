@@ -1,1 +1,0 @@
-# Evidence Panel Components

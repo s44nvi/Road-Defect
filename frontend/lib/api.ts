@@ -286,6 +286,9 @@ export interface SegmentProperties {
   medium_issues: number;
   low_issues: number;
   geometry_source: string | null;
+  mcgm_id: string | null;
+  ward: string | null;
+  work_status: string | null;
 }
 
 export interface SegmentFeature {
@@ -300,8 +303,9 @@ export interface SegmentFeatureCollection {
   features: SegmentFeature[];
 }
 
-export function fetchRoadHealthSegments(): Promise<SegmentFeatureCollection> {
-  return apiFetch<SegmentFeatureCollection>("/road-health/segments");
+export function fetchRoadHealthSegments(geometrySource?: string): Promise<SegmentFeatureCollection> {
+  const qs = geometrySource ? `?geometry_source=${encodeURIComponent(geometrySource)}` : "";
+  return apiFetch<SegmentFeatureCollection>(`/road-health/segments${qs}`);
 }
 
 /** A defect as exposed on `GET /road-health/segments/{id}`. */
@@ -324,6 +328,9 @@ export interface SegmentDetail {
   geometry: LineStringGeometry;
   length_km: number;
   geometry_source: string | null;
+  mcgm_id: string | null;
+  ward: string | null;
+  work_status: string | null;
   health_score: number;
   health_status: string;
   health_color: string;
@@ -343,16 +350,90 @@ export function fetchRoadHealthSegment(segmentId: string): Promise<SegmentDetail
   return apiFetch<SegmentDetail>(`/road-health/segments/${segmentId}`);
 }
 
+// ---------------------------------------------------------------------
+// Hawker / encroachment detection — POST /ml/hawkers/detect. As of the
+// current backend contract this call *is* the submission for this
+// category, not a separate analyze-then-submit step: it requires the
+// citizen's bearer token and location, runs every detection through the
+// same Road Intelligence/AHP service as the pothole pipeline, and
+// persists one Defect per detection in a single DB transaction (see the
+// live OpenAPI description on this route). The frontend must never call
+// any other endpoint to "finish" a hawker report after this succeeds —
+// doing so would create duplicates.
+//
+// Real inference only — a failed/empty call must never be papered over
+// with a fabricated detection.
+export interface HawkerDetectionItem {
+  defect_id: number;
+  /** One of: fixed-stall-vendor, semi-fixed-vendor, itinerant-vendor —
+   * kept exactly as the model returns it for any future internal use, but
+   * intentionally never shown in the UI; see
+   * components/report/ai-detection.tsx, which always displays a
+   * detection as simply "Vendor Detected". */
+  class_name: string;
+  confidence: number; // 0-1
+  /** [x_min, y_min, x_max, y_max] in *original* image pixel coordinates —
+   * callers must scale against the source image's natural width/height,
+   * never the displayed element size. */
+  bbox: [number, number, number, number];
+  /** Real, AHP-computed severity — displayed as-is by
+   * components/report/ai-detection.tsx (unlike the pothole pipeline,
+   * whose response has no confidence/bbox but does share this same
+   * real-severity guarantee). */
+  defect_severity: string;
+  severity_score: number;
+  defect_priority: number;
+  latitude: number;
+  longitude: number;
+  road_segment_id: string | null;
+  image_path: string;
+}
+
+export interface HawkerDetectionResponse {
+  filename: string | null;
+  detections: HawkerDetectionItem[];
+}
+
+export interface HawkerDetectPayload {
+  latitude: number;
+  longitude: number;
+  file: File;
+}
+
+/** POST /ml/hawkers/detect — requires the citizen's bearer token. */
+export function detectHawkers(payload: HawkerDetectPayload, token: string): Promise<HawkerDetectionResponse> {
+  const form = new FormData();
+  form.append("latitude", String(payload.latitude));
+  form.append("longitude", String(payload.longitude));
+  form.append("file", payload.file);
+  // No Content-Type here — same reasoning as submitImageReport() above.
+  return apiFetch<HawkerDetectionResponse>("/ml/hawkers/detect", {
+    method: "POST",
+    body: form,
+    token,
+  });
+}
+
 // Internal presentation shape consumed by the map/dashboard components
 // (components/map/defect-map.tsx, components/dashboard/road-health-*.tsx,
 // components/road-health/*.tsx). Kept stable across the GeoJSON migration
 // so those components didn't need field-by-field rewrites — see
 // components/map/use-road-health.ts for the adapter that builds this from
 // a real SegmentFeature.
-export interface RoadHealthGeometry {
+export interface RoadHealthLineString {
   type: "LineString";
   coordinates: [number, number][];
 }
+
+export interface RoadHealthMultiLineString {
+  type: "MultiLineString";
+  coordinates: [number, number][][];
+}
+
+/** A segment's geometry is either a LineString or a MultiLineString (real
+ * MCGM roads may have genuinely disconnected parts). Components that only
+ * need to pass it to MapLibre can treat both interchangeably as GeoJSON. */
+export type RoadHealthGeometry = RoadHealthLineString | RoadHealthMultiLineString;
 
 export interface RoadHealthSegment {
   road_segment_id: string;
@@ -366,14 +447,73 @@ export interface RoadHealthSegment {
   medium_issues: number;
   low_issues: number;
   geometry: RoadHealthGeometry;
+  /** MCGM source tag; null for OSM / dev segments. */
+  geometry_source: string | null;
+  /** MCGM road ID (e.g. "MCGM-2353"); null for non-MCGM segments. */
+  mcgm_id: string | null;
+  /** MCGM ward; null for non-MCGM segments. */
+  ward: string | null;
+  /** MCGM work status; null for non-MCGM segments. */
+  work_status: string | null;
 }
 
 // ---------------------------------------------------------------------
-// Per-incident AI/evidence fields — still NOT populated by any real
-// response. POST /reports/image's ImageReportResponse carries a priority
-// score and an image path (both modeled above), but no bounding
-// box/confidence/class detail is returned to the frontend anywhere today.
-// No call site in this codebase ever constructs a real one — every
+// MCGM infrastructure context — GET /road-health/segments/{id}/assets.
+// These are purely informational: manholes and encroachments are real
+// MCGM datasets but MUST NOT affect Road Health scoring, severity, or
+// defect counts (see backend/app/assets/router.py for the separation
+// rationale). The frontend renders them as read-only context only.
+
+export interface ManholeItem {
+  id: number;
+  object_id: string;
+  road_name: string | null;
+  ward: string | null;
+  latitude: number;
+  longitude: number;
+  status: string | null;
+  condition: string | null;
+  remarks: string | null;
+  road_norm: string | null;
+  segment_id: string | null;
+}
+
+export interface EncroachmentItem {
+  id: number;
+  object_id: string | null;
+  road_name: string | null;
+  ward: string | null;
+  latitude: number;
+  longitude: number;
+  status: string | null;
+  complaint_type: string | null;
+  description: string | null;
+  segment_id: string | null;
+}
+
+export interface SegmentAssetsResponse {
+  segment_id: string;
+  manhole_count: number;
+  encroachment_count: number;
+  manholes: ManholeItem[];
+  encroachments: EncroachmentItem[];
+}
+
+/** GET /road-health/segments/{segment_id}/assets — MCGM context layer.
+ * Returns manholes and encroachments linked to this segment. Results are
+ * context only and must never influence Road Health display. */
+export function fetchSegmentAssets(segmentId: string): Promise<SegmentAssetsResponse> {
+  return apiFetch<SegmentAssetsResponse>(`/road-health/segments/${segmentId}/assets`);
+}
+
+// ---------------------------------------------------------------------
+// Per-defect AI/evidence fields (pothole/crack incidents) — still NOT
+// populated by any real response. POST /reports/image's ImageReportResponse
+// carries a priority score and an image path (both modeled above), but no
+// bounding box/confidence/class detail is returned for defects today.
+// (Hawker detection above is a separate, unrelated feature that *does*
+// return real bbox/confidence/class data — see HawkerDetection.) No call
+// site in this codebase ever constructs a real AIDetectionResult — every
 // consumer receives `undefined`/`null` and renders an honest "not
 // available yet" state instead.
 export interface AIDetectionResult {

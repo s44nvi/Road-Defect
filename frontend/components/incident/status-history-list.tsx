@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { fetchDefectStatusHistory, ApiError, type StatusHistoryEntry } from "@/lib/api";
 import { statusLabel } from "@/lib/defect-status";
+import { formatIST } from "@/lib/format-datetime";
 
 type HistoryState =
   | { status: "loading" }
@@ -56,7 +57,7 @@ export function StatusHistoryList({ defectId }: { defectId: number }) {
             {statusLabel(entry.new_status)}
           </p>
           <p className="mt-0.5 text-on-surface-variant">
-            {new Date(entry.changed_at).toLocaleString()}
+            {formatIST(entry.changed_at)}
             {entry.changed_by ? ` · by ${entry.changed_by}` : ""}
           </p>
           {entry.note && <p className="mt-1 text-on-surface-variant">{entry.note}</p>}
