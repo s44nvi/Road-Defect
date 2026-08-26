@@ -11,12 +11,32 @@ class ReportCreate(BaseModel):
 
 
 class DefectResponse(BaseModel):
+    """
+    Unchanged since before the pothole image pipeline -- this is also the
+    response shape of the legacy `PATCH /defects/{defect_id}` endpoint, which
+    must keep its exact original key set. `POST /reports` and `GET /defects`
+    use `DefectResponseWithPriority` below instead.
+    """
+
     defect_id: int
     defect_type: str
     defect_status: str
     defect_severity: str
     latitude: float
     longitude: float
+
+
+class DefectResponseWithPriority(DefectResponse):
+    """
+    `DefectResponse` plus the AHP priority score, for the two routes that
+    need to expose it: `POST /reports` and `GET /defects`.
+
+    Additive/optional: JSON-only reports created through POST /reports have
+    no detection to score and always return null here; only defects created
+    through POST /reports/image populate it. See models.Defect.defect_priority.
+    """
+
+    defect_priority: float | None = None
 
 
 class DefectStatusUpdate(BaseModel):

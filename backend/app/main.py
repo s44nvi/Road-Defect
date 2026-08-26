@@ -23,6 +23,7 @@ from .models import Defect, Officer
 from .schemas import (
     DefectDetailResponse,
     DefectResponse,
+    DefectResponseWithPriority,
     DefectStatusChangeRequest,
     DefectStatusUpdate,
     ImageReportResponse,
@@ -158,7 +159,7 @@ def citizen_login(request: CitizenLoginRequest, db: Session = Depends(get_db)):
     }
 
 
-@app.post("/reports", response_model=DefectResponse)
+@app.post("/reports", response_model=DefectResponseWithPriority)
 def create_report(report: ReportCreate, db: Session = Depends(get_db)):
     defect = Defect(
         defect_type=report.defect_type,
@@ -186,6 +187,7 @@ def create_report(report: ReportCreate, db: Session = Depends(get_db)):
         "defect_severity": defect.defect_severity,
         "latitude": defect.latitude,
         "longitude": defect.longitude,
+        "defect_priority": defect.defect_priority,
     }
 
 
@@ -277,7 +279,7 @@ async def create_report_from_image(
     return detail
 
 
-@app.get("/defects", response_model=list[DefectResponse])
+@app.get("/defects", response_model=list[DefectResponseWithPriority])
 def list_defects(db: Session = Depends(get_db)):
     defects = db.query(Defect).all()
 
@@ -289,6 +291,7 @@ def list_defects(db: Session = Depends(get_db)):
             "defect_severity": defect.defect_severity,
             "latitude": defect.latitude,
             "longitude": defect.longitude,
+            "defect_priority": defect.defect_priority,
         }
         for defect in defects
     ]

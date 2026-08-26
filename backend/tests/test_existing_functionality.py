@@ -3,6 +3,11 @@ Regression tests for pre-existing endpoints that must keep working exactly as
 before: GET /defects, POST /reports, and the general health check. These
 guard against the Road Health feature accidentally changing existing
 behaviour.
+
+`defect_priority` was added deliberately (not a regression) so GET /defects
+and POST /reports expose the AHP priority score persisted by the pothole
+image pipeline (POST /reports/image); it is always null for JSON-only
+reports, which have no detection to score. See test_pothole_integration_boundary.py.
 """
 
 from __future__ import annotations
@@ -36,12 +41,14 @@ def test_post_reports_still_returns_the_original_response_shape(client):
         "defect_severity",
         "latitude",
         "longitude",
+        "defect_priority",
     }
     assert body["defect_status"] == "reported"
     assert body["defect_type"] == "pothole"
     assert body["defect_severity"] == "medium"
     assert body["latitude"] == 19.05
     assert body["longitude"] == 72.85
+    assert body["defect_priority"] is None
 
 
 def test_get_defects_still_works_and_returns_created_reports(client):
@@ -69,6 +76,7 @@ def test_get_defects_still_works_and_returns_created_reports(client):
         "defect_severity",
         "latitude",
         "longitude",
+        "defect_priority",
     }
 
 
