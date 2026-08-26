@@ -294,6 +294,47 @@ class SubmitReportRequest(BaseModel):
         return normalized
 
 
+class NearbyIncidentResponse(BaseModel):
+    """
+    One item of `GET /reports/nearby`.
+
+    A read-only search result -- distinct from `DefectDetailResponse` (the
+    officer detail view) because it deliberately never carries reporter PII
+    and adds `distance_km` (computed for this search, not stored) plus the
+    best-effort `nearest_road`/`road_segment_id` from the defect's existing
+    snapped segment (see `road_health_service.assign_defect_to_segment`,
+    already run at creation time -- this endpoint does not compute or
+    fabricate any new road geometry).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    defect_id: int
+    defect_type: str
+    defect_severity: str
+    defect_priority: float | None = None
+    latitude: float
+    longitude: float
+    distance_km: float
+    defect_status: str
+    reported_at: datetime | None = None
+    image_url: str | None = None
+    road_segment_id: str | None = None
+    nearest_road: str | None = None
+
+    # camelCase mirror, consistent with the rest of the API
+    defectId: int
+    defectType: str
+    defectSeverity: str
+    defectPriority: float | None = None
+    distanceKm: float
+    defectStatus: str
+    reportedAt: datetime | None = None
+    imageUrl: str | None = None
+    roadSegmentId: str | None = None
+    nearestRoad: str | None = None
+
+
 class HawkerDetectionItem(BaseModel):
     """
     One hawker detection from `POST /ml/hawkers/detect`, and the `Defect`

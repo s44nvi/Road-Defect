@@ -43,10 +43,12 @@ from .schemas import (
     DefectStatusUpdate,
     HawkerDetectionResponse,
     ImageReportResponse,
+    NearbyIncidentResponse,
     PublicIssueResponse,
     ReportCreate,
     SubmitReportRequest,
 )
+from .road_health.geo import haversine_km
 from .road_health import service as road_health_service
 from .road_health.config import STATUS_CONFIRMED, STATUS_IN_PROGRESS, STATUS_RESOLVED
 from .road_health.router import router as road_health_router
@@ -321,6 +323,92 @@ def get_my_reports(
         }
         for defect in defects
     ]
+
+
+_MAX_NEARBY_RADIUS_KM = 50.0
+
+
+@app.get(
+    "/reports/nearby",
+    response_model=list[NearbyIncidentResponse],
+)
+def get_nearby_reports(
+    latitude: float,
+    longitude: float,
+    radius_km: float,
+    db: Session = Depends(get_db),
+    citizen: Citizen = Depends(get_current_citizen),
+):
+    """
+    Read-only location search: defects within `radius_km` of
+    `(latitude, longitude)`, nearest first.
+
+    Distance is real great-circle distance (haversine, see
+    `road_health.geo.haversine_km`), not a flat Cartesian approximation.
+    This endpoint never creates or mutates a `Defect` -- it is a pure query.
+
+    `nearest_road`/`road_segment_id` come from the defect's own snapped
+    segment (`Defect.road_segment`, set at creation time by
+    `road_health_service.assign_defect_to_segment`) -- never freshly
+    computed or fabricated here, and `None` when the defect was never close
+    enough to a known MCGM/road-health segment to be snapped.
+    """
+    if not (-90.0 <= latitude <= 90.0):
+        raise HTTPException(status_code=422, detail="latitude must be between -90 and 90")
+    if not (-180.0 <= longitude <= 180.0):
+        raise HTTPException(status_code=422, detail="longitude must be between -180 and 180")
+    if not (0.0 < radius_km <= _MAX_NEARBY_RADIUS_KM):
+        raise HTTPException(
+            status_code=422,
+            detail=f"radius_km must be greater than 0 and at most {_MAX_NEARBY_RADIUS_KM}",
+        )
+
+    defects = db.query(Defect).all()
+
+    results = []
+    for defect in defects:
+        distance_km = haversine_km(latitude, longitude, defect.latitude, defect.longitude)
+        if distance_km <= radius_km:
+            results.append((defect, distance_km))
+
+    results.sort(key=lambda pair: pair[1])
+
+    items = []
+    for defect, distance_km in results:
+        segment = defect.road_segment
+        road_segment_id = segment.segment_id if segment else None
+        nearest_road = segment.road_name if segment else None
+        reported_at = to_ist(defect.status_history[0].changed_at) if defect.status_history else None
+        image_url = _image_url(defect.image_path)
+
+        items.append(
+            {
+                "defect_id": defect.id,
+                "defect_type": defect.defect_type,
+                "defect_severity": defect.defect_severity,
+                "defect_priority": defect.defect_priority,
+                "latitude": defect.latitude,
+                "longitude": defect.longitude,
+                "distance_km": distance_km,
+                "defect_status": defect.defect_status,
+                "reported_at": reported_at,
+                "image_url": image_url,
+                "road_segment_id": road_segment_id,
+                "nearest_road": nearest_road,
+                "defectId": defect.id,
+                "defectType": defect.defect_type,
+                "defectSeverity": defect.defect_severity,
+                "defectPriority": defect.defect_priority,
+                "distanceKm": distance_km,
+                "defectStatus": defect.defect_status,
+                "reportedAt": reported_at,
+                "imageUrl": image_url,
+                "roadSegmentId": road_segment_id,
+                "nearestRoad": nearest_road,
+            }
+        )
+
+    return items
 
 
 @app.post("/reports/image", response_model=ImageReportResponse)
