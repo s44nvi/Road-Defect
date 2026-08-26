@@ -11,10 +11,11 @@ existing Road Intelligence/AHP service scores it, and that the result is
 persisted and returned -- NOT real ML inference. No real model weights are
 loaded and no claim is made about real-world detection accuracy.
 
-Until Harmeet's real `PotholeDetector` implementation is wired into
-`app.ml.potholes.detector.get_default_detector`, the default detector raises
-`ModelUnavailableError`; this is also covered here so the "no fake inference"
-guarantee is enforced by the test suite.
+`app.ml.potholes.detector.get_default_detector` now returns the real
+`YoloPotholeDetector`; the "no fake inference" guarantee (`UnavailablePotholeDetector`
+raising `ModelUnavailableError`, and the route translating that to a 503) is
+still covered here via explicit dependency override, independent of what the
+default detector currently is.
 """
 
 from __future__ import annotations
@@ -194,24 +195,54 @@ def test_no_detections_returns_422_and_creates_no_defect(client):
 
 
 # ---------------------------------------------------------------------------
-# Default detector (no override): model genuinely not available yet
+# UnavailablePotholeDetector: still fails loudly, not fake inference
 # ---------------------------------------------------------------------------
-def test_default_detector_raises_model_unavailable_not_fake_inference():
-    from backend.app.ml.potholes.detector import ModelUnavailableError, get_default_detector
+# `get_default_detector()` now returns the real `YoloPotholeDetector` (see
+# `test_default_detector_is_wired_to_the_real_model` below) -- these two
+# tests instead exercise `UnavailablePotholeDetector` and the route's
+# `ModelUnavailableError` -> 503 handling directly, via explicit dependency
+# override, so the "no fake inference" guarantee stays covered independent
+# of which detector is wired in by default.
+def test_unavailable_detector_raises_model_unavailable_not_fake_inference():
+    from backend.app.ml.potholes.detector import ModelUnavailableError, UnavailablePotholeDetector
 
-    detector = get_default_detector()
+    detector = UnavailablePotholeDetector()
 
     with pytest.raises(ModelUnavailableError):
         detector.detect("irrelevant/path.jpg")
 
 
 def test_post_reports_image_returns_503_when_model_unavailable(client):
-    # No override: exercises the real default (`UnavailablePotholeDetector`).
-    response = client.post(
-        "/reports/image",
-        data={"latitude": "19.0728", "longitude": "72.8826"},
-        files={"file": ("pothole.jpg", io.BytesIO(_tiny_jpeg_bytes()), "image/jpeg")},
-    )
+    from backend.app.dependencies import get_pothole_detector
+    from backend.app.main import app
+    from backend.app.ml.potholes.detector import UnavailablePotholeDetector
+
+    app.dependency_overrides[get_pothole_detector] = UnavailablePotholeDetector
+    try:
+        response = client.post(
+            "/reports/image",
+            data={"latitude": "19.0728", "longitude": "72.8826"},
+            files={"file": ("pothole.jpg", io.BytesIO(_tiny_jpeg_bytes()), "image/jpeg")},
+        )
+    finally:
+        app.dependency_overrides.pop(get_pothole_detector, None)
 
     assert response.status_code == 503
     assert client.get("/defects").json() == []
+
+
+# ---------------------------------------------------------------------------
+# Default detector (no override): now wired to the real model, not the
+# placeholder
+# ---------------------------------------------------------------------------
+def test_default_detector_is_wired_to_the_real_model():
+    from backend.app.ml.potholes.detector import (
+        UnavailablePotholeDetector,
+        YoloPotholeDetector,
+        get_default_detector,
+    )
+
+    detector = get_default_detector()
+
+    assert isinstance(detector, YoloPotholeDetector)
+    assert not isinstance(detector, UnavailablePotholeDetector)
