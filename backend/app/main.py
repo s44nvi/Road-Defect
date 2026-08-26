@@ -1,5 +1,7 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, UploadFile, File
 from sqlalchemy.orm import Session
+from pathlib import Path
+import tempfile
 
 from .database import SessionLocal
 from .models import Defect
@@ -8,6 +10,7 @@ from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse
 from .road_intelligence import service as road_intelligence_service
 from .road_intelligence.severity import InvalidDetectionError
 from .road_intelligence.scoring import InvalidContextError
+from .ml.hawkers.inference import predict
 
 app = FastAPI(title="Road-Defect Backend")
 
@@ -98,3 +101,31 @@ def update_defect(
         "latitude": defect.latitude,
         "longitude": defect.longitude,
     }
+
+
+@app.post("/ml/hawkers/detect")
+async def detect_hawkers(file: UploadFile = File(...)):
+    suffix = Path(file.filename or "").suffix or ".jpg"
+
+    image_bytes = await file.read()
+
+    if not image_bytes:
+        raise HTTPException(status_code=400, detail="Empty image file")
+
+    temp_path = None
+
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+            temp_file.write(image_bytes)
+            temp_path = Path(temp_file.name)
+
+        detections = predict(temp_path)
+
+        return {
+            "filename": file.filename,
+            "detections": detections,
+        }
+
+    finally:
+        if temp_path is not None:
+            temp_path.unlink(missing_ok=True)
