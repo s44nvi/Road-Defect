@@ -18,7 +18,11 @@ from sqlalchemy.orm import Session
 
 from .database import SessionLocal
 from .ml.hawkers.inference import predict as hawker_predict
-from .ml.potholes.detector import PotholeDetector, get_default_detector
+from .ml.potholes.detector import (
+    PotholeDetector,
+    get_default_detector,
+    get_default_dual_detector,
+)
 
 
 def get_db() -> Iterator[Session]:
@@ -39,6 +43,16 @@ def get_pothole_detector() -> PotholeDetector:
     without a real model artifact.
     """
     return get_default_detector()
+
+
+def get_dual_pothole_detector() -> PotholeDetector:
+    """
+    FastAPI dependency for the dual-model (`best.pt` + `best2.pt`) arbitrated
+    pothole detector, used by `POST /reports/analyze` and
+    `POST /reports/submit`. Tests override this the same way as
+    `get_pothole_detector`.
+    """
+    return get_default_dual_detector()
 
 
 def get_hawker_detector() -> Callable[[str | Path], list[dict]]:
