@@ -11,11 +11,13 @@ module and creating an import cycle. `main.py` re-exports it, so any existing
 
 from __future__ import annotations
 
-from typing import Iterator
+from pathlib import Path
+from typing import Callable, Iterator
 
 from sqlalchemy.orm import Session
 
 from .database import SessionLocal
+from .ml.hawkers.inference import predict as hawker_predict
 from .ml.potholes.detector import PotholeDetector, get_default_detector
 
 
@@ -37,3 +39,16 @@ def get_pothole_detector() -> PotholeDetector:
     without a real model artifact.
     """
     return get_default_detector()
+
+
+def get_hawker_detector() -> Callable[[str | Path], list[dict]]:
+    """
+    FastAPI dependency for the hawker detector.
+
+    Returns `app.ml.hawkers.inference.predict`, the real (already-working)
+    model call -- unlike the pothole boundary there is no placeholder here,
+    since `production.pt` is present and functional. Tests override this
+    dependency with a mock callable to exercise the pipeline without
+    loading the real model on every run.
+    """
+    return hawker_predict

@@ -191,3 +191,48 @@ class ImageReportResponse(DefectDetailResponse):
 
     defectPriority: float | None = None
     imagePath: str | None = None
+
+
+class HawkerDetectionItem(BaseModel):
+    """
+    One hawker detection from `POST /ml/hawkers/detect`, and the `Defect`
+    row persisted from it.
+
+    Reuses the same field set/naming convention as `ImageReportResponse`
+    (`defect_severity`/`defect_priority`/`image_path` etc.) plus the raw
+    detection fields (`class_name`/`confidence`/`bbox`) the frontend needs
+    to draw the detection box, since one hawker image can produce several
+    of these (unlike the single-defect pothole pipeline).
+    """
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    defect_id: int
+    class_name: str
+    confidence: float
+    bbox: list[float]
+    defect_severity: str
+    severity_score: float
+    defect_priority: float
+    latitude: float
+    longitude: float
+    road_segment_id: str | None = None
+    image_path: str
+
+    # camelCase mirror, consistent with the rest of the API
+    defectId: int
+    className: str
+    defectSeverity: str
+    severityScore: float
+    defectPriority: float
+    roadSegmentId: str | None = None
+    imagePath: str
+
+
+class HawkerDetectionResponse(BaseModel):
+    """`POST /ml/hawkers/detect` response: every hawker Defect created from the uploaded image."""
+
+    model_config = ConfigDict(populate_by_name=True)
+
+    filename: str | None = None
+    detections: list[HawkerDetectionItem]

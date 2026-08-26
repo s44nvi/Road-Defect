@@ -53,6 +53,23 @@ DEFECT_TYPE_BASE_SEVERITY: dict[str, float] = {
     "transverse_crack": 0.45,
     "crack": 0.45,          # generic fallback if only one "crack" class exists
     "patch_repair": 0.25,
+    # --- Hawker/street-vendor obstruction classes ---------------------------
+    # Verified against app/ml/hawkers/inference.py's `production.pt`
+    # (model.names): 0=fixed-stall-vendor, 1=semi-fixed-vendor,
+    # 2=itinerant-vendor. These are road-OBSTRUCTION severity, not
+    # pavement-damage severity, but use the same [0,1] baseline-risk scale
+    # so they flow through the same severity/AHP formula unchanged.
+    #   - fixed-stall-vendor: a permanent/semi-permanent structure
+    #     (planted stall, cart left in place) -- persistent obstruction of
+    #     the carriageway/footpath, present at all times -> highest baseline.
+    #   - semi-fixed-vendor: a vendor with a mobile cart/stand that is
+    #     usually stationary during business hours but can be moved
+    #     -> moderate baseline (less persistent than a fixed stall).
+    #   - itinerant-vendor: a mobile/walking vendor with no fixed
+    #     footprint -> lowest baseline (transient obstruction).
+    "fixed-stall-vendor": 0.70,
+    "semi-fixed-vendor": 0.55,
+    "itinerant-vendor": 0.35,
 }
 
 # Score used when an incoming class_name is not found in the mapping above.

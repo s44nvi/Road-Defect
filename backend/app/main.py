@@ -1,7 +1,8 @@
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from pydantic import ValidationError
 from sqlalchemy.orm import Session
 from pathlib import Path
-import tempfile
+from typing import Callable
 import uuid
 
 from .auth.dependencies import get_current_citizen, get_current_officer
@@ -18,7 +19,7 @@ from .auth.service import (
     issue_citizen_token,
     issue_officer_token,
 )
-from .dependencies import get_db, get_pothole_detector
+from .dependencies import get_db, get_hawker_detector, get_pothole_detector
 from .defect_workflow import (
     InvalidStatusError,
     InvalidTransitionError,
@@ -33,6 +34,7 @@ from .schemas import (
     DefectSeverityUpdate,
     DefectStatusChangeRequest,
     DefectStatusUpdate,
+    HawkerDetectionResponse,
     ImageReportResponse,
     PublicIssueResponse,
     ReportCreate,
@@ -41,11 +43,10 @@ from .road_health import service as road_health_service
 from .road_health.config import STATUS_CONFIRMED, STATUS_IN_PROGRESS, STATUS_RESOLVED
 from .road_health.router import router as road_health_router
 from .road_health.schemas import StatusHistoryEntry
-from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse, RoadContext
+from .road_intelligence.schemas import AnalyzeRequest, AnalyzeResponse, DetectionInput, RoadContext
 from .road_intelligence import service as road_intelligence_service
 from .road_intelligence.severity import InvalidDetectionError
 from .road_intelligence.scoring import InvalidContextError
-from .ml.hawkers.inference import predict
 from .ml.potholes.adapter import to_detection_input
 from .ml.potholes.detector import ModelUnavailableError, PotholeDetector
 
@@ -663,12 +664,31 @@ def get_defect_status_history(
     ]
 
 
-@app.post("/ml/hawkers/detect")
+@app.post("/ml/hawkers/detect", response_model=HawkerDetectionResponse)
 async def detect_hawkers(
+    latitude: float = Form(...),
+    longitude: float = Form(...),
     file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    citizen: Citizen = Depends(get_current_citizen),
+    detector: Callable[[str | Path], list[dict]] = Depends(get_hawker_detector),
 ):
-    suffix = Path(file.filename or "").suffix or ".jpg"
+    """
+    Image pipeline for authenticated citizen hawker/street-vendor reports.
 
+    Follows the same pattern as `POST /reports/image`
+    (upload -> persist image -> YOLO detect -> DetectionInput -> existing
+    Road Intelligence/AHP service -> severity + priority -> persisted
+    Defect linked to citizen), except that EVERY detection in the image
+    becomes its own Defect, not just the highest-confidence one -- a
+    single hawker photo can legitimately show several vendors.
+
+    Severity/priority is analyzed for every detection BEFORE any Defect is
+    written, so an invalid detection (422) never leaves a partial batch of
+    Defects committed. All Defects from one image are written in a single
+    DB transaction: the whole batch commits together, or none of it does.
+    """
+    suffix = Path(file.filename or "").suffix or ".jpg"
     image_bytes = await file.read()
 
     if not image_bytes:
@@ -677,23 +697,104 @@ async def detect_hawkers(
             detail="Empty image file",
         )
 
-    temp_path = None
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    image_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
+    image_path.write_bytes(image_bytes)
+
+    detections = detector(image_path)
+
+    if not detections:
+        raise HTTPException(
+            status_code=422,
+            detail="No hawkers detected in the uploaded image.",
+        )
+
+    # Validate + score every detection up front, before touching the DB, so
+    # one bad detection can never leave a partial batch of Defects behind.
+    analyzed: list[tuple[dict, AnalyzeResponse]] = []
+    for detection in detections:
+        try:
+            detection_input = DetectionInput(
+                class_id=detection["class_id"],
+                class_name=detection["class_name"],
+                confidence=detection["confidence"],
+                bbox=detection["bbox"],
+                image_width=detection.get("image_width"),
+                image_height=detection.get("image_height"),
+            )
+            analysis = road_intelligence_service.analyze(
+                AnalyzeRequest(
+                    detection=detection_input,
+                    context=RoadContext(
+                        latitude=latitude,
+                        longitude=longitude,
+                    ),
+                )
+            )
+        except (ValidationError, InvalidDetectionError, InvalidContextError) as exc:
+            raise HTTPException(
+                status_code=422,
+                detail=str(exc),
+            )
+        analyzed.append((detection, analysis))
+
+    response_items = []
 
     try:
-        with tempfile.NamedTemporaryFile(
-            delete=False,
-            suffix=suffix,
-        ) as temp_file:
-            temp_file.write(image_bytes)
-            temp_path = Path(temp_file.name)
+        for detection, analysis in analyzed:
+            defect = Defect(
+                defect_type=detection["class_name"],
+                defect_status="reported",
+                defect_severity=analysis.severity.category.lower(),
+                defect_priority=analysis.priority.score,
+                latitude=latitude,
+                longitude=longitude,
+                image_path=str(image_path),
+                citizen_id=citizen.id,
+            )
 
-        detections = predict(temp_path)
+            db.add(defect)
+            db.flush()
 
-        return {
-            "filename": file.filename,
-            "detections": detections,
-        }
+            road_health_service.assign_defect_to_segment(db, defect)
+            record_initial_status(db, defect)
 
-    finally:
-        if temp_path is not None:
-            temp_path.unlink(missing_ok=True)
+            response_items.append((defect, detection, analysis))
+
+        db.commit()
+    except Exception:
+        # One image can create several Defects (one per detection) -- if
+        # persistence fails partway through, roll back the whole batch
+        # rather than leaving some detections committed and others not.
+        db.rollback()
+        raise
+
+    for defect, _, _ in response_items:
+        db.refresh(defect)
+
+    return {
+        "filename": file.filename,
+        "detections": [
+            {
+                "defect_id": defect.id,
+                "class_name": detection["class_name"],
+                "confidence": detection["confidence"],
+                "bbox": detection["bbox"],
+                "defect_severity": defect.defect_severity,
+                "severity_score": analysis.severity.score,
+                "defect_priority": defect.defect_priority,
+                "latitude": defect.latitude,
+                "longitude": defect.longitude,
+                "road_segment_id": defect.road_segment.segment_id if defect.road_segment else None,
+                "image_path": defect.image_path,
+                "defectId": defect.id,
+                "className": detection["class_name"],
+                "defectSeverity": defect.defect_severity,
+                "severityScore": analysis.severity.score,
+                "defectPriority": defect.defect_priority,
+                "roadSegmentId": defect.road_segment.segment_id if defect.road_segment else None,
+                "imagePath": defect.image_path,
+            }
+            for defect, detection, analysis in response_items
+        ],
+    }

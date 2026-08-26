@@ -31,6 +31,10 @@ def predict(image_path: str | Path) -> list[dict]:
         - class_name
         - confidence
         - bbox [x1, y1, x2, y2]
+        - image_width / image_height -- the real source image dimensions
+          (from the model's own `orig_shape`), so downstream frame-relative
+          severity geometry (`road_intelligence.severity.compute_bbox_geometry`)
+          never has to fall back to an estimated size for a real detection.
     """
     model = get_model()
 
@@ -39,6 +43,7 @@ def predict(image_path: str | Path) -> list[dict]:
     detections = []
 
     for result in results:
+        image_height, image_width = result.orig_shape  # matches the scale box.xyxy is already reported in
         for box in result.boxes:
             class_id = int(box.cls[0])
             confidence = float(box.conf[0])
@@ -56,6 +61,8 @@ def predict(image_path: str | Path) -> list[dict]:
                         round(x2, 2),
                         round(y2, 2),
                     ],
+                    "image_width": int(image_width),
+                    "image_height": int(image_height),
                 }
             )
 
