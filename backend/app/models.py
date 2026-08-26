@@ -80,6 +80,19 @@ class Defect(Base):
 
     road_segment = relationship("RoadSegment", back_populates="defects")
 
+    # Citizen who submitted this report.
+    #
+    # Nullable because existing defects and development/seed defects may not
+    # belong to a citizen. New authenticated citizen reports will populate it.
+    citizen_id = Column(
+        Integer,
+        ForeignKey("citizens.id"),
+        nullable=True,
+        index=True,
+    )
+
+    citizen = relationship("Citizen", back_populates="defects")
+
     status_history = relationship(
         "DefectStatusHistory",
         back_populates="defect",
@@ -134,18 +147,28 @@ class Officer(Base):
 
     department = Column(String, nullable=True)
 
-    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )
 
 
 class Citizen(Base):
     """
     A citizen identity, distinct from and never interchangeable with an
-    Officer row. Citizen report submission (`POST /reports`,
-    `POST /reports/image`) does not require login -- this table exists only
-    to back `POST /auth/citizen/login` and keep citizen credentials in a
-    separate identity space from officers, per the auth requirement that
-    neither principal type can authenticate as the other.
+    Officer row.
+
+    Citizen report submission can now be associated with the authenticated
+    citizen through Defect.citizen_id. This relationship is what allows the
+    backend to provide a proper user-scoped "My Reports" endpoint instead of
+    making the frontend fetch all defects and filter them.
     """
 
     __tablename__ = "citizens"
@@ -156,5 +179,16 @@ class Citizen(Base):
 
     password_hash = Column(String, nullable=False)
 
-    is_active = Column(Boolean, nullable=False, default=True, server_default="true")
-    created_at = Column(DateTime, nullable=False, default=datetime.utcnow)
+    is_active = Column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="true",
+    )
+    created_at = Column(
+        DateTime,
+        nullable=False,
+        default=datetime.utcnow,
+    )
+
+    defects = relationship("Defect", back_populates="citizen")

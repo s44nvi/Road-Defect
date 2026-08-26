@@ -1,6 +1,8 @@
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from .road_health.config import ALL_STATUSES
+
+ALLOWED_SEVERITIES = ("low", "medium", "high", "critical")
 
 
 class ReportCreate(BaseModel):
@@ -85,6 +87,32 @@ class DefectStatusChangeRequest(BaseModel):
         description="Ignored. Retained only for backwards compatibility; "
                      "the acting officer is derived from the auth token.",
     )
+
+
+class DefectSeverityUpdate(BaseModel):
+    """
+    Body of `PATCH /defects/{defect_id}/severity`.
+
+        {"defect_severity": "critical"}
+
+    Requires `Authorization: Bearer <officer access token>`
+    (`Depends(get_current_officer)` on the route).
+    """
+
+    defect_severity: str = Field(
+        description=f"One of: {', '.join(ALLOWED_SEVERITIES)}",
+        examples=["critical"],
+    )
+
+    @field_validator("defect_severity")
+    @classmethod
+    def _normalize_severity(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_SEVERITIES:
+            raise ValueError(
+                f"defect_severity must be one of: {', '.join(ALLOWED_SEVERITIES)}"
+            )
+        return normalized
 
 
 class DefectDetailResponse(BaseModel):

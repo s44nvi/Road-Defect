@@ -41,13 +41,11 @@ from backend.app.models import Defect, RoadSegment
 from backend.app.road_health import service as road_health_service
 from backend.app.road_health.config import (
     GEOMETRY_SOURCE_DEV,
-    STATUS_ASSIGNED,
     STATUS_CONFIRMED,
+    STATUS_IN_PROGRESS,
     STATUS_REJECTED,
-    STATUS_REPAIR_IN_PROGRESS,
     STATUS_REPORTED,
     STATUS_RESOLVED,
-    STATUS_UNDER_REVIEW,
     TARGET_SEGMENT_LENGTH_KM,
 )
 from backend.app.road_health.geo import (
@@ -76,7 +74,7 @@ CORRIDOR_FILE = (
 DEFECT_PLANS: dict[str, list[tuple[str, str]]] = {
     "green": [
         ("low", STATUS_REPORTED),
-        ("low", STATUS_UNDER_REVIEW),
+        ("low", STATUS_CONFIRMED),
         ("low", STATUS_CONFIRMED),
         ("critical", STATUS_RESOLVED),
         ("critical", STATUS_RESOLVED),
@@ -85,9 +83,9 @@ DEFECT_PLANS: dict[str, list[tuple[str, str]]] = {
     ],
     "orange": [
         ("critical", STATUS_REPORTED),
-        ("critical", STATUS_ASSIGNED),
-        ("medium", STATUS_UNDER_REVIEW),
-        ("medium", STATUS_REPAIR_IN_PROGRESS),
+        ("critical", STATUS_IN_PROGRESS),
+        ("medium", STATUS_CONFIRMED),
+        ("medium", STATUS_IN_PROGRESS),
         ("low", STATUS_REPORTED),
         ("medium", STATUS_RESOLVED),
         ("low", STATUS_RESOLVED),
@@ -97,14 +95,14 @@ DEFECT_PLANS: dict[str, list[tuple[str, str]]] = {
         ("critical", STATUS_REPORTED),
         ("critical", STATUS_REPORTED),
         ("critical", STATUS_REPORTED),
-        ("critical", STATUS_UNDER_REVIEW),
-        ("critical", STATUS_UNDER_REVIEW),
         ("critical", STATUS_CONFIRMED),
         ("critical", STATUS_CONFIRMED),
-        ("critical", STATUS_REPAIR_IN_PROGRESS),
+        ("critical", STATUS_CONFIRMED),
+        ("critical", STATUS_CONFIRMED),
+        ("critical", STATUS_IN_PROGRESS),
         ("medium", STATUS_REPORTED),
         ("medium", STATUS_CONFIRMED),
-        ("medium", STATUS_REPAIR_IN_PROGRESS),
+        ("medium", STATUS_IN_PROGRESS),
         ("low", STATUS_REPORTED),
         ("critical", STATUS_RESOLVED),
         ("medium", STATUS_RESOLVED),

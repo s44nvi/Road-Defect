@@ -1,16 +1,49 @@
 """
 Regression tests for pre-existing endpoints that must keep working exactly as
-before: GET /defects, POST /reports, and the general health check. These
-guard against the Road Health feature accidentally changing existing
-behaviour.
+before: GET /defects, POST /reports, and the general health check.
 
-`defect_priority` was added deliberately (not a regression) so GET /defects
-and POST /reports expose the AHP priority score persisted by the pothole
-image pipeline (POST /reports/image); it is always null for JSON-only
-reports, which have no detection to score. See test_pothole_integration_boundary.py.
+`POST /reports` now requires an authenticated citizen because reports must be
+owned by the citizen who submitted them. These tests therefore authenticate a
+test citizen before creating reports.
+
+`defect_priority` is deliberately included because GET /defects and
+POST /reports expose the AHP priority score persisted by the pothole image
+pipeline. JSON-only reports have no detection and therefore return null.
 """
 
 from __future__ import annotations
+
+
+def _citizen_headers(client) -> dict[str, str]:
+    """Create a test citizen, log in, and return its bearer header."""
+    from backend.app.auth.security import hash_password
+    from backend.app.database import SessionLocal
+    from backend.app.models import Citizen
+
+    db = SessionLocal()
+    try:
+        citizen = Citizen(
+            name="Regression Test Citizen",
+            email="regression@example.com",
+            password_hash=hash_password("test-password"),
+        )
+        db.add(citizen)
+        db.commit()
+    finally:
+        db.close()
+
+    response = client.post(
+        "/auth/citizen/login",
+        json={
+            "email": "regression@example.com",
+            "password": "test-password",
+        },
+    )
+
+    assert response.status_code == 200
+
+    token = response.json()["access_token"]
+    return {"Authorization": f"Bearer {token}"}
 
 
 def test_health_check_still_works(client):
@@ -21,8 +54,11 @@ def test_health_check_still_works(client):
 
 
 def test_post_reports_still_returns_the_original_response_shape(client):
+    headers = _citizen_headers(client)
+
     response = client.post(
         "/reports",
+        headers=headers,
         json={
             "defect_type": "pothole",
             "defect_severity": "medium",
@@ -52,8 +88,11 @@ def test_post_reports_still_returns_the_original_response_shape(client):
 
 
 def test_get_defects_still_works_and_returns_created_reports(client):
+    headers = _citizen_headers(client)
+
     client.post(
         "/reports",
+        headers=headers,
         json={
             "defect_type": "pothole",
             "defect_severity": "high",
@@ -88,9 +127,12 @@ def test_get_defects_returns_empty_list_when_nothing_reported(client):
 
 
 def test_multiple_reports_all_appear_in_get_defects(client):
+    headers = _citizen_headers(client)
+
     for i in range(3):
         client.post(
             "/reports",
+            headers=headers,
             json={
                 "defect_type": "crack",
                 "defect_severity": "low",

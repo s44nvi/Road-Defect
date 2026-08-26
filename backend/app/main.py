@@ -4,14 +4,20 @@ from pathlib import Path
 import tempfile
 import uuid
 
-from .auth.dependencies import get_current_officer
+from .auth.dependencies import get_current_citizen, get_current_officer
 from .auth.schemas import (
     CitizenLoginRequest,
     CitizenLoginResponse,
     OfficerLoginRequest,
     OfficerLoginResponse,
 )
-from .auth.service import InvalidCredentialsError, authenticate_citizen, authenticate_officer, issue_citizen_token, issue_officer_token
+from .auth.service import (
+    InvalidCredentialsError,
+    authenticate_citizen,
+    authenticate_officer,
+    issue_citizen_token,
+    issue_officer_token,
+)
 from .dependencies import get_db, get_pothole_detector
 from .defect_workflow import (
     InvalidStatusError,
@@ -19,11 +25,12 @@ from .defect_workflow import (
     apply_status_change,
     record_initial_status,
 )
-from .models import Defect, Officer
+from .models import Citizen, Defect, Officer
 from .schemas import (
     DefectDetailResponse,
     DefectResponse,
     DefectResponseWithPriority,
+    DefectSeverityUpdate,
     DefectStatusChangeRequest,
     DefectStatusUpdate,
     ImageReportResponse,
@@ -39,6 +46,7 @@ from .road_intelligence.scoring import InvalidContextError
 from .ml.hawkers.inference import predict
 from .ml.potholes.adapter import to_detection_input
 from .ml.potholes.detector import ModelUnavailableError, PotholeDetector
+
 
 UPLOAD_DIR = Path(__file__).resolve().parent / "uploads" / "reports"
 
@@ -110,18 +118,20 @@ def health():
 
 
 @app.post("/auth/officer/login", response_model=OfficerLoginResponse)
-def officer_login(request: OfficerLoginRequest, db: Session = Depends(get_db)):
+def officer_login(
+    request: OfficerLoginRequest,
+    db: Session = Depends(get_db),
+):
     """
-    Municipal officer login. Verifies against the `officers` table only --
-    citizen credentials can never authenticate here (see
-    `auth.service.authenticate_officer`, which queries `Officer` and nothing
-    else). Returns 401 for unknown email, wrong password, or an inactive
-    officer alike, so the response never reveals which case occurred.
+    Municipal officer login. Verifies against the `officers` table only.
     """
     try:
         officer = authenticate_officer(db, request.email, request.password)
     except InvalidCredentialsError:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
 
     return {
         "access_token": issue_officer_token(officer),
@@ -136,17 +146,20 @@ def officer_login(request: OfficerLoginRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/auth/citizen/login", response_model=CitizenLoginResponse)
-def citizen_login(request: CitizenLoginRequest, db: Session = Depends(get_db)):
+def citizen_login(
+    request: CitizenLoginRequest,
+    db: Session = Depends(get_db),
+):
     """
-    Citizen login. Verifies against the `citizens` table only -- mirrors
-    `officer_login` but is backed by a completely separate identity space
-    (see `auth.service.authenticate_citizen`), so officer credentials can
-    never authenticate here.
+    Citizen login. Verifies against the `citizens` table only.
     """
     try:
         citizen = authenticate_citizen(db, request.email, request.password)
     except InvalidCredentialsError:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid email or password",
+        )
 
     return {
         "access_token": issue_citizen_token(citizen),
@@ -160,7 +173,22 @@ def citizen_login(request: CitizenLoginRequest, db: Session = Depends(get_db)):
 
 
 @app.post("/reports", response_model=DefectResponseWithPriority)
-def create_report(report: ReportCreate, db: Session = Depends(get_db)):
+def create_report(
+    report: ReportCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Create a report.
+
+    This endpoint intentionally remains public/unauthenticated for backwards
+    compatibility with the existing reporting API and frontend.
+
+    If the caller is authenticated as a citizen, ownership can be associated
+    through the authenticated image-report path (`POST /reports/image`) and
+    citizen-scoped reports are exposed through `GET /reports/mine`.
+
+    The JSON report endpoint itself does not require a citizen token.
+    """
     defect = Defect(
         defect_type=report.defect_type,
         defect_status="reported",
@@ -191,36 +219,75 @@ def create_report(report: ReportCreate, db: Session = Depends(get_db)):
     }
 
 
+@app.get(
+    "/reports/mine",
+    response_model=list[DefectResponseWithPriority],
+)
+def get_my_reports(
+    db: Session = Depends(get_db),
+    citizen: Citizen = Depends(get_current_citizen),
+):
+    """
+    Return only reports submitted by the authenticated citizen.
+
+    This is deliberately user-scoped in the database query rather than
+    fetching all defects and filtering on the frontend.
+    """
+    defects = (
+        db.query(Defect)
+        .filter(Defect.citizen_id == citizen.id)
+        .order_by(Defect.id.desc())
+        .all()
+    )
+
+    return [
+        {
+            "defect_id": defect.id,
+            "defect_type": defect.defect_type,
+            "defect_status": defect.defect_status,
+            "defect_severity": defect.defect_severity,
+            "latitude": defect.latitude,
+            "longitude": defect.longitude,
+            "defect_priority": defect.defect_priority,
+        }
+        for defect in defects
+    ]
+
+
 @app.post("/reports/image", response_model=ImageReportResponse)
 async def create_report_from_image(
     latitude: float = Form(...),
     longitude: float = Form(...),
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
+    citizen: Citizen = Depends(get_current_citizen),
     detector: PotholeDetector = Depends(get_pothole_detector),
 ):
     """
-    Image pipeline for pothole reports:
+    Image pipeline for authenticated citizen pothole reports:
 
-        uploaded image -> persist image -> PotholeDetector.detect()
-            -> NormalizedDetection -> DetectionInput
-            -> existing Road Intelligence/AHP service -> severity + priority
-            -> persisted Defect
+        uploaded image
+            -> persist image
+            -> PotholeDetector.detect()
+            -> NormalizedDetection
+            -> DetectionInput
+            -> existing Road Intelligence/AHP service
+            -> severity + priority
+            -> persisted Defect linked to citizen
 
-    This is additive: the pre-existing JSON `POST /reports` above is
-    unchanged and still works for callers that already have a
-    type/severity/lat/lon payload with no image.
+    Until Harmeet's real detector is wired in, detector.detect() raises
+    ModelUnavailableError and this route responds with 503.
 
-    Until Harmeet's real detector is wired into
-    `app.ml.potholes.detector.get_default_detector`, `detector.detect()`
-    raises `ModelUnavailableError` and this route responds 503 rather than
-    fabricating a detection. No fake inference output is ever persisted.
+    No fake inference result is ever returned or persisted.
     """
     suffix = Path(file.filename or "").suffix or ".jpg"
     image_bytes = await file.read()
 
     if not image_bytes:
-        raise HTTPException(status_code=400, detail="Empty image file")
+        raise HTTPException(
+            status_code=400,
+            detail="Empty image file",
+        )
 
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     image_path = UPLOAD_DIR / f"{uuid.uuid4().hex}{suffix}"
@@ -229,7 +296,10 @@ async def create_report_from_image(
     try:
         detections = detector.detect(image_path)
     except ModelUnavailableError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(
+            status_code=503,
+            detail=str(exc),
+        )
 
     if not detections:
         raise HTTPException(
@@ -237,19 +307,27 @@ async def create_report_from_image(
             detail="No pothole detected in the uploaded image.",
         )
 
-    # One Defect per report: score the highest-confidence detection, same as
-    # a single manual report describes a single defect.
-    primary = max(detections, key=lambda d: d.confidence)
+    # One Defect per report: score the highest-confidence detection.
+    primary = max(
+        detections,
+        key=lambda detection: detection.confidence,
+    )
 
     try:
         analysis = road_intelligence_service.analyze(
             AnalyzeRequest(
                 detection=to_detection_input(primary),
-                context=RoadContext(latitude=latitude, longitude=longitude),
+                context=RoadContext(
+                    latitude=latitude,
+                    longitude=longitude,
+                ),
             )
         )
     except (InvalidDetectionError, InvalidContextError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        )
 
     defect = Defect(
         defect_type=primary.class_name,
@@ -259,6 +337,7 @@ async def create_report_from_image(
         latitude=latitude,
         longitude=longitude,
         image_path=str(image_path),
+        citizen_id=citizen.id,
     )
 
     db.add(defect)
@@ -279,8 +358,19 @@ async def create_report_from_image(
     return detail
 
 
-@app.get("/defects", response_model=list[DefectResponseWithPriority])
-def list_defects(db: Session = Depends(get_db)):
+@app.get(
+    "/defects",
+    response_model=list[DefectResponseWithPriority],
+)
+def list_defects(
+    db: Session = Depends(get_db),
+):
+    """
+    Officer dashboard endpoint.
+
+    Returns all persisted defects, including development/test rows where
+    applicable.
+    """
     defects = db.query(Defect).all()
 
     return [
@@ -297,15 +387,57 @@ def list_defects(db: Session = Depends(get_db)):
     ]
 
 
-@app.post("/road-intelligence/analyze", response_model=AnalyzeResponse)
-def analyze_defect(request: AnalyzeRequest) -> AnalyzeResponse:
+@app.get(
+    "/defects/{defect_id}",
+    response_model=DefectDetailResponse,
+)
+def get_defect_details(
+    defect_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Return details for one defect.
+
+    This endpoint is currently readable without authentication so the existing
+    frontend/officer flow remains backwards compatible. Public visibility
+    filtering should use a separate public/community endpoint rather than
+    weakening the officer dashboard contract.
+    """
+    defect = (
+        db.query(Defect)
+        .filter(Defect.id == defect_id)
+        .first()
+    )
+
+    if defect is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Defect not found",
+        )
+
+    return _defect_detail(defect)
+
+
+@app.post(
+    "/road-intelligence/analyze",
+    response_model=AnalyzeResponse,
+)
+def analyze_defect(
+    request: AnalyzeRequest,
+) -> AnalyzeResponse:
     try:
         return road_intelligence_service.analyze(request)
     except (InvalidDetectionError, InvalidContextError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc))
+        raise HTTPException(
+            status_code=422,
+            detail=str(exc),
+        )
 
 
-@app.patch("/defects/{defect_id}", response_model=DefectResponse)
+@app.patch(
+    "/defects/{defect_id}",
+    response_model=DefectResponse,
+)
 def update_defect(
     defect_id: int,
     update: DefectStatusUpdate,
@@ -313,23 +445,19 @@ def update_defect(
     officer: Officer = Depends(get_current_officer),
 ):
     """
-    Existing status-update endpoint, kept backwards compatible.
-
-    Same path, same request field (`defect_status`), same response shape, so
-    the officer UI's existing Confirm/Reject buttons keep working unchanged.
-    What is new is that the change is now validated against the workflow,
-    requires an authenticated officer, and is recorded in
-    `defect_status_history` instead of silently overwriting the status.
-
-    This endpoint runs in `legacy` mode, which additionally permits the
-    one-step `reported -> confirmed` transition the existing Confirm button
-    relies on (see `defect_workflow.LEGACY_EXTRA_TRANSITIONS`). Prefer
-    `PATCH /defects/{defect_id}/status` for new officer workflow code.
+    Existing backwards-compatible status-update endpoint.
     """
-    defect = db.query(Defect).filter(Defect.id == defect_id).first()
+    defect = (
+        db.query(Defect)
+        .filter(Defect.id == defect_id)
+        .first()
+    )
 
     if defect is None:
-        raise HTTPException(status_code=404, detail="Defect not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Defect not found",
+        )
 
     _apply_status(
         db,
@@ -353,7 +481,10 @@ def update_defect(
     }
 
 
-@app.patch("/defects/{defect_id}/status", response_model=DefectDetailResponse)
+@app.patch(
+    "/defects/{defect_id}/status",
+    response_model=DefectDetailResponse,
+)
 def update_defect_status(
     defect_id: int,
     request: DefectStatusChangeRequest,
@@ -365,27 +496,25 @@ def update_defect_status(
 
         PATCH /defects/12/status
         Authorization: Bearer <officer access token>
-        {"status": "confirmed", "note": "Verified by municipal officer"}
 
-    Validates the status against the allowed vocabulary, validates the
-    transition against the workflow graph, records a `defect_status_history`
-    row, updates the defect, and returns it. The status change and its history
-    row are committed in one transaction.
+        {
+            "status": "confirmed",
+            "note": "Verified by municipal officer"
+        }
 
-    Road health is not recomputed here because it is never stored -- the
-    road-health endpoints derive it from current defect rows on every request,
-    so a status change is reflected immediately with no cache to invalidate.
-
-    `changed_by` is always the authenticated officer's id (see
-    `Depends(get_current_officer)` above) -- never a client-supplied header
-    or body field. A request body may still include a `changed_by` field for
-    backwards compatibility with older clients, but its value is ignored;
-    trusting it would let one officer impersonate another.
+    The authenticated officer's id is always used for the audit record.
     """
-    defect = db.query(Defect).filter(Defect.id == defect_id).first()
+    defect = (
+        db.query(Defect)
+        .filter(Defect.id == defect_id)
+        .first()
+    )
 
     if defect is None:
-        raise HTTPException(status_code=404, detail="Defect not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Defect not found",
+        )
 
     _apply_status(
         db,
@@ -402,21 +531,69 @@ def update_defect_status(
     return _defect_detail(defect)
 
 
+@app.patch(
+    "/defects/{defect_id}/severity",
+    response_model=DefectDetailResponse,
+)
+def update_defect_severity(
+    defect_id: int,
+    request: DefectSeverityUpdate,
+    db: Session = Depends(get_db),
+    officer: Officer = Depends(get_current_officer),
+):
+    """
+    Officer-only severity update.
+
+        PATCH /defects/12/severity
+        Authorization: Bearer <officer access token>
+
+        {"defect_severity": "critical"}
+
+    Only `defect_severity` is changed; status and all other fields are
+    left untouched.
+    """
+    defect = (
+        db.query(Defect)
+        .filter(Defect.id == defect_id)
+        .first()
+    )
+
+    if defect is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Defect not found",
+        )
+
+    defect.defect_severity = request.defect_severity
+
+    db.commit()
+    db.refresh(defect)
+
+    return _defect_detail(defect)
+
+
 @app.get(
     "/defects/{defect_id}/status-history",
     response_model=list[StatusHistoryEntry],
 )
-def get_defect_status_history(defect_id: int, db: Session = Depends(get_db)):
+def get_defect_status_history(
+    defect_id: int,
+    db: Session = Depends(get_db),
+):
     """
     Full status timeline for a defect, oldest first.
-
-    Powers the officer frontend's timeline view. The first entry of a defect
-    created through `POST /reports` has `old_status = null`.
     """
-    defect = db.query(Defect).filter(Defect.id == defect_id).first()
+    defect = (
+        db.query(Defect)
+        .filter(Defect.id == defect_id)
+        .first()
+    )
 
     if defect is None:
-        raise HTTPException(status_code=404, detail="Defect not found")
+        raise HTTPException(
+            status_code=404,
+            detail="Defect not found",
+        )
 
     return [
         {
@@ -438,18 +615,26 @@ def get_defect_status_history(defect_id: int, db: Session = Depends(get_db)):
 
 
 @app.post("/ml/hawkers/detect")
-async def detect_hawkers(file: UploadFile = File(...)):
+async def detect_hawkers(
+    file: UploadFile = File(...),
+):
     suffix = Path(file.filename or "").suffix or ".jpg"
 
     image_bytes = await file.read()
 
     if not image_bytes:
-        raise HTTPException(status_code=400, detail="Empty image file")
+        raise HTTPException(
+            status_code=400,
+            detail="Empty image file",
+        )
 
     temp_path = None
 
     try:
-        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as temp_file:
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=suffix,
+        ) as temp_file:
             temp_file.write(image_bytes)
             temp_path = Path(temp_file.name)
 
