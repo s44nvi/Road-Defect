@@ -610,7 +610,7 @@ async def analyze_report_image(
 
         uploaded image
             -> persist image (reusable by POST /reports/submit via image_token)
-            -> dual pothole detector (best.pt + best2.pt, arbitrated) +
+            -> dual pothole detector (best.pt + pothole.pt, arbitrated) +
                hawker detector, run separately and never merged
             -> best real detection across both streams (or none)
             -> (optional) Road Intelligence severity, if lat/lon given

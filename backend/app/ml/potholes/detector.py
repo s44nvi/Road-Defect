@@ -208,13 +208,14 @@ class YoloPotholeDetector:
 
 class YoloPotholeDetectorV2:
     """
-    Second, pothole-specific model: `best2.pt`. Direct inspection of the
-    checkpoint's embedded `train_args` confirms this is a YOLO26**m**
-    checkpoint (`scale: 'm'`, `yaml_file: yolo26m.yaml`, trained at 960px
-    for 150 epochs, run name `yolo26m_mwpd_960`), trained on the
+    Second, pothole-specific model: `pothole.pt`. Direct inspection of the
+    checkpoint's embedded `train_args` confirms this is a YOLO26**s**
+    checkpoint (`scale: 's'`, `yaml_file: yolo26s.yaml`, trained at 640px
+    for 100 epochs, run name `yolo26s_mwpd`), trained on the
     "Multi-Weather Pothole Detection" (MWPD) dataset, single class
-    `pothole`. (An earlier version of this docstring called it "YOLO26s" --
-    that was inaccurate; corrected from the verified embedded metadata.)
+    `pothole`. (A later checkpoint, briefly used as `best2.pt`, was a
+    YOLO26m run at 960px/150 epochs -- that update was intentionally
+    reverted; this file is the original YOLO26s checkpoint.)
 
     No verified accuracy/mAP figures for this checkpoint are recorded here;
     do not rely on this docstring for performance numbers. It is treated as
@@ -229,13 +230,13 @@ class YoloPotholeDetectorV2:
     """
 
     OUTPUT_CLASS_NAME = "pothole"
-    MODEL_SOURCE = "yolo26m-best2.pt-mwpd-pothole-v1"
+    MODEL_SOURCE = "yolo26s-pothole.pt-mwpd-pothole-v1"
 
     def __init__(self, weights_path: str | Path | None = None) -> None:
         self._weights_path = (
             Path(weights_path)
             if weights_path is not None
-            else Path(__file__).resolve().parent / "best2.pt"
+            else Path(__file__).resolve().parent / "pothole.pt"
         )
 
     def detect(self, image_path: str | Path) -> list[NormalizedDetection]:
@@ -273,7 +274,7 @@ class YoloPotholeDetectorV2:
 class DualPotholeDetector:
     """
     `PotholeDetector` implementation used by `POST /reports/analyze` and
-    `POST /reports/submit`: runs BOTH `best.pt` (v1) and `best2.pt` (v2) and
+    `POST /reports/submit`: runs BOTH `best.pt` (v1) and `pothole.pt` (v2) and
     arbitrates between them via `arbitration.arbitrate_pothole_detections`
     (class-semantics-based, not a raw-confidence comparison -- see that
     module's docstring).
@@ -322,7 +323,7 @@ _default_detector: PotholeDetector | None = None
 
 def get_default_dual_detector() -> PotholeDetector:
     """
-    FastAPI dependency factory for the dual-model (`best.pt` + `best2.pt`)
+    FastAPI dependency factory for the dual-model (`best.pt` + `pothole.pt`)
     arbitrated detector, used by `POST /reports/analyze` and
     `POST /reports/submit`. Separate singleton from `get_default_detector()`
     so `POST /reports/image` keeps its original single-model behavior.

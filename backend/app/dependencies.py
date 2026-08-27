@@ -47,7 +47,7 @@ def get_pothole_detector() -> PotholeDetector:
 
 def get_dual_pothole_detector() -> PotholeDetector:
     """
-    FastAPI dependency for the dual-model (`best.pt` + `best2.pt`) arbitrated
+    FastAPI dependency for the dual-model (`best.pt` + `pothole.pt`) arbitrated
     pothole detector, used by `POST /reports/analyze` and
     `POST /reports/submit`. Tests override this the same way as
     `get_pothole_detector`.

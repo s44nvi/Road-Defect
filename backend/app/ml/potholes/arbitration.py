@@ -8,10 +8,10 @@ Class-semantics-based arbitration between the two pothole-family models:
     "crack", mapped from the RDD codes D00/D01/D10/D11/D20). Its pothole
     (`D40`) detections are also considered, but only as a fallback -- see
     below.
-  - `best2.pt` (v2, YOLO26m "MWPD" single-class pothole model -- confirmed
+  - `pothole.pt` (v2, YOLO26s "MWPD" single-class pothole model -- confirmed
     by direct inspection of the checkpoint's embedded `train_args`:
-    `scale: 'm'`, `yaml_file: yolo26m.yaml`, 960px, 150 epochs; an earlier
-    version of this comment said "YOLO26s", which was inaccurate):
+    `scale: 's'`, `yaml_file: yolo26s.yaml`, 640px, 100 epochs, run name
+    `yolo26s_mwpd`):
     authoritative for "pothole" whenever it clears
     `POTHOLE_V2_CONFIDENCE_THRESHOLD`.
 
@@ -59,7 +59,7 @@ def arbitrate_pothole_detections(
     v2_detections: list[NormalizedDetection],
 ) -> NormalizedDetection | None:
     """
-    Combine `best.pt` (v1) and `best2.pt` (v2) detections for one image into
+    Combine `best.pt` (v1) and `pothole.pt` (v2) detections for one image into
     a single arbitrated `NormalizedDetection`, or `None` if nothing
     sufficiently confident/supported was found.
     """

@@ -2,12 +2,12 @@
 test_analyze_submit_and_arbitration.py
 =======================================
 Covers the new analyze/submit split (POST /reports/analyze,
-POST /reports/submit) and the dual-pothole-model (best.pt + best2.pt)
+POST /reports/submit) and the dual-pothole-model (best.pt + pothole.pt)
 arbitration logic.
 
 Uses MOCKED detectors throughout (deterministic, no real model loading) --
 same convention as `test_pothole_integration_boundary.py`. Real-model smoke
-tests for best2.pt live in the manual verification done during
+tests for pothole.pt live in the manual verification done during
 implementation (see arbitration.py / detector.py docstrings); this file
 exercises the plumbing and the arbitration rules themselves.
 """
