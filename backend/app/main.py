@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.db import init_db
-from app.api import evidence, defects, verify
+from app.api import evidence, defects, repairs, verify
 
 # Application startup/shutdown
 @asynccontextmanager
@@ -73,12 +73,13 @@ async def root():
 
 # Include API routers
 app.include_router(evidence.router, prefix=settings.api_prefix)
-app.include_router(defects.router, prefix=settings.api_prefix)
+app.include_router(repairs.router, prefix=settings.api_prefix)
 app.include_router(verify.router, prefix=settings.api_prefix)
+app.include_router(defects.static_router, prefix=settings.api_prefix)
+app.include_router(defects.router, prefix=settings.api_prefix)
 
 # TODO: Add routes for:
 # - POST /evidence/bulk - Bulk upload
-# - POST /defects/{id}/repair - Repair scheduling
 # - GET /repairs - Get repair history
 # - Authentication middleware
 # - Rate limiting

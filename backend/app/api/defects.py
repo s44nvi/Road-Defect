@@ -10,6 +10,7 @@ from app.models.defect import Defect, DefectStatus, SeverityLevel
 from app.schemas.defect import DefectResponse, DefectListResponse, DefectUpdate
 
 router = APIRouter(prefix="/defects", tags=["Defects"])
+static_router = APIRouter(prefix="/defects", tags=["Defects"])
 
 
 @router.get("/", response_model=DefectListResponse)
@@ -159,7 +160,7 @@ async def update_defect(
         )
 
 
-@router.get("/pending/verification", response_model=DefectListResponse)
+@static_router.get("/pending/verification", response_model=DefectListResponse)
 async def get_pending_verification(
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -169,7 +170,7 @@ async def get_pending_verification(
     return await list_defects(status="detected", page=page, page_size=page_size, db=db)
 
 
-@router.get("/stats/summary", response_model=dict)
+@static_router.get("/stats/summary", response_model=dict)
 async def get_summary_stats(db: Session = Depends(get_db)):
     """Get dashboard summary statistics"""
     try:
