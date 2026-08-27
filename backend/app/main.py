@@ -5,13 +5,19 @@ FastAPI application entry point for Road Defect Detection System
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
-import os
+from app.config import settings
+from app.db import init_db
 
 # Application startup/shutdown
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     print("🚀 Road Defect API starting up...")
+    try:
+        init_db()
+        print("✅ Database initialized successfully")
+    except Exception as e:
+        print(f"⚠️ Database initialization warning: {e}")
     yield
     # Shutdown
     print("🛑 Road Defect API shutting down...")
@@ -19,18 +25,17 @@ async def lifespan(app: FastAPI):
 
 # Initialize FastAPI app
 app = FastAPI(
-    title="Road Defect Detection API",
+    title=settings.app_name,
     description="Smart road-defect detection and maintenance prioritization system",
-    version="1.0.0",
-    lifespan=lifespan
+    version=settings.app_version,
+    lifespan=lifespan,
+    debug=settings.debug,
 )
 
 # CORS Configuration
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:3000").split(",")
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=allowed_origins,
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,7 +49,8 @@ async def health_check():
     return {
         "status": "healthy",
         "service": "Road Defect API",
-        "version": "1.0.0"
+        "version": settings.app_version,
+        "environment": settings.environment,
     }
 
 
@@ -52,10 +58,12 @@ async def health_check():
 async def root():
     """Root endpoint with API information"""
     return {
-        "name": "Road Defect Detection API",
+        "name": settings.app_name,
         "description": "Smart road-defect detection and maintenance prioritization system",
+        "version": settings.app_version,
+        "environment": settings.environment,
         "docs": "/docs",
-        "health": "/health"
+        "health": "/health",
     }
 
 
@@ -70,4 +78,8 @@ async def root():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(
+        app,
+        host=settings.api_host,
+        port=settings.api_port,
+    )
