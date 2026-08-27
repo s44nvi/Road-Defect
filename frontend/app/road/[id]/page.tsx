@@ -68,9 +68,10 @@ function RoadDetailContent({ name, segmentId }: { name: string; segmentId: strin
   const segment = state.status === "ready" ? state.segment : null;
 
   // Show the MCGM context card only when assets have loaded and there's
-  // something to display.
+  // something to display. Manhole display has been intentionally removed
+  // from the officer UI — only encroachment records are shown.
   const hasMcgmAssets =
-    assets !== null && (assets.manhole_count > 0 || assets.encroachment_count > 0);
+    assets !== null && assets.encroachment_count > 0;
 
   return (
     <OfficerShell name={name}>
@@ -192,10 +193,11 @@ function RoadDetailContent({ name, segmentId }: { name: string; segmentId: strin
         {/*
           MCGM Infrastructure Context
           ─────────────────────────────────────────────────────────────────────
-          Manholes and encroachments are sourced from the real MCGM dataset
+          Encroachment complaints are sourced from the real MCGM dataset
           and are displayed here as read-only contextual information only.
           They are NOT defects and do NOT affect the Road Health score,
           severity ratings, or defect counts shown above.
+          (Manhole display intentionally removed from officer UI.)
           ─────────────────────────────────────────────────────────────────────
         */}
         {hasMcgmAssets && assets && (
@@ -210,49 +212,8 @@ function RoadDetailContent({ name, segmentId }: { name: string; segmentId: strin
               </p>
             </div>
 
-            {assets.manhole_count > 0 && (
-              <div className="mt-4">
-                <p className="mb-2 text-sm font-medium text-on-surface">
-                  Manholes{" "}
-                  <span className="ml-1 rounded-full bg-surface-container-low px-2 py-0.5 text-xs font-normal text-on-surface-variant">
-                    {assets.manhole_count}
-                  </span>
-                </p>
-                <ol className="space-y-2">
-                  {assets.manholes.map((m) => (
-                    <li
-                      key={m.id}
-                      className="rounded-lg border border-border-subtle px-4 py-3 text-sm"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <span className="font-medium text-on-surface">
-                          {m.road_name ?? "Unknown road"}
-                          {m.ward ? ` · Ward ${m.ward}` : ""}
-                        </span>
-                        <div className="flex flex-wrap gap-2 text-xs">
-                          {m.status && (
-                            <span className="rounded bg-surface-container-low px-1.5 py-0.5 text-on-surface-variant">
-                              {m.status}
-                            </span>
-                          )}
-                          {m.condition && (
-                            <span className="rounded bg-surface-container-low px-1.5 py-0.5 text-on-surface-variant">
-                              {m.condition}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                      {m.remarks && (
-                        <p className="mt-1 text-xs text-on-surface-variant">{m.remarks}</p>
-                      )}
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
-
             {assets.encroachment_count > 0 && (
-              <div className={assets.manhole_count > 0 ? "mt-5" : "mt-4"}>
+              <div className="mt-4">
                 <p className="mb-2 text-sm font-medium text-on-surface">
                   Encroachment Complaints{" "}
                   <span className="ml-1 rounded-full bg-surface-container-low px-2 py-0.5 text-xs font-normal text-on-surface-variant">

@@ -1,13 +1,16 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { PotholeIcon, ManholeIcon, CrackIcon, PersonIcon, CheckCircleIcon } from "@/components/icons";
+import { PotholeIcon, CrackIcon, PersonIcon, CheckCircleIcon } from "@/components/icons";
 import type { DefectTypeKey } from "@/lib/defect-types";
 
 // Exactly RoadSense's four supported citizen-report categories.
 // All four are always clickable — the citizen can always change their
 // selection. AI analysis may pre-select a category by passing `value`,
 // but that is just an initial state, not a lock.
+//
+// NOTE: Manhole has been intentionally removed. Supported categories are:
+// Pothole, Crack – Alligator, Crack – Longitudinal, Encroachment / Vendor.
 const OPTIONS: {
   value: DefectTypeKey;
   label: string;
@@ -15,11 +18,21 @@ const OPTIONS: {
   icon: typeof PotholeIcon;
 }[] = [
   { value: "pothole", label: "Pothole", icon: PotholeIcon },
-  { value: "manhole", label: "Manhole", icon: ManholeIcon },
-  { value: "road_crack", label: "Crack", icon: CrackIcon },
+  {
+    value: "alligator_crack",
+    label: "Crack – Alligator",
+    description: "Interconnected cracking pattern",
+    icon: CrackIcon,
+  },
+  {
+    value: "longitudinal_crack",
+    label: "Crack – Longitudinal",
+    description: "Along the road direction",
+    icon: CrackIcon,
+  },
   {
     value: "hawker_encroachment",
-    label: "Hawker / Encroachment",
+    label: "Encroachment / Vendor",
     description: "Vendors or structures encroaching on roads",
     icon: PersonIcon,
   },

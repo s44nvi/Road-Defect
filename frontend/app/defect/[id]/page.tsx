@@ -16,6 +16,7 @@ import { IncidentLocationMap } from "@/components/map/incident-location-map";
 import { EvidenceSection } from "@/components/incident/evidence-section";
 import { RoadIntelligenceSection } from "@/components/incident/road-intelligence-section";
 import { ObservationsSection } from "@/components/incident/observations-section";
+import { CorroborationSection } from "@/components/incident/corroboration-section";
 import { RepairVerificationSection } from "@/components/incident/repair-verification-section";
 import { BoundingBoxOverlay } from "@/components/hawker/bounding-box-overlay";
 import { defectTypeLabel } from "@/lib/defect-types";
@@ -140,6 +141,11 @@ function DefectDetailContent({
                 <h1 className="mt-1 text-2xl font-semibold text-on-surface">
                   {defectTypeLabel(defect.defect_type)}
                 </h1>
+                {(defect.report_count ?? 1) > 1 && (
+                  <p className="mt-1 inline-flex items-center gap-1 rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary">
+                    {defect.report_count} reports of the same physical defect
+                  </p>
+                )}
               </div>
               <StatusChip tone={statusTone(defect.defect_status)}>
                 {statusLabel(defect.defect_status)}
@@ -276,10 +282,25 @@ function DefectDetailContent({
                   Observations
                 </dt>
                 <dd className="mt-1">
-                  <ObservationsSection />
+                  <ObservationsSection count={defect.report_count ?? null} />
                 </dd>
               </div>
             </dl>
+
+            <div className="mt-6">
+              <Divider />
+            </div>
+
+            {/* E2. Corroboration — every individual citizen report backing
+                this one physical defect, each with its own reporter, photo,
+                GPS, timestamp and AI evidence. */}
+            <div className="mt-4">
+              <SectionHeading>Corroboration</SectionHeading>
+              <CorroborationSection
+                reports={defect.reports ?? []}
+                canonicalReportId={defect.reports?.[0]?.report_id ?? defect.defect_id}
+              />
+            </div>
 
             <div className="mt-6">
               <Divider />

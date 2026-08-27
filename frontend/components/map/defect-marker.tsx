@@ -1,12 +1,15 @@
 import { cn } from "@/lib/cn";
 import { normalizeDefectType, type DefectTypeKey } from "@/lib/defect-types";
 import { normalizeSeverity, type Severity } from "@/components/ui/severity-badge";
-import { PotholeIcon, CrackIcon, ManholeIcon, PersonIcon } from "@/components/icons";
+import { PotholeIcon, CrackIcon, PersonIcon } from "@/components/icons";
 
+// NOTE: ManholeIcon removed — manhole is no longer a supported defect category.
+// If the backend returns an unsupported defect_type (e.g. "manhole"),
+// normalizeDefectType() returns null and the marker falls back to PotholeIcon.
 const typeIcon: Record<DefectTypeKey, typeof PotholeIcon> = {
   pothole: PotholeIcon,
-  road_crack: CrackIcon,
-  manhole: ManholeIcon,
+  alligator_crack: CrackIcon,
+  longitudinal_crack: CrackIcon,
   hawker_encroachment: PersonIcon,
 };
 

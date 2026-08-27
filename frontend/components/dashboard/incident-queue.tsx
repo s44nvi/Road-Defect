@@ -11,10 +11,11 @@ import { defectTypeLabel, normalizeDefectType, type DefectTypeKey } from "@/lib/
 import { statusTone, statusLabel } from "@/lib/defect-status";
 import { FOCUS_INCIDENT_SEARCH_EVENT } from "@/lib/dashboard-events";
 import { SearchIcon, CloseIcon } from "@/components/icons";
-import type { DefectResponse } from "@/lib/api";
+import type { DefectResponse, DefectResponseWithPriority } from "@/lib/api";
 
 const SEVERITY_ORDER: Record<Severity, number> = { critical: 0, medium: 1, low: 2 };
-const TYPE_OPTIONS: DefectTypeKey[] = ["pothole", "road_crack", "manhole", "hawker_encroachment"];
+// NOTE: manhole removed — not a supported defect category for this demo.
+const TYPE_OPTIONS: DefectTypeKey[] = ["pothole", "alligator_crack", "longitudinal_crack", "hawker_encroachment"];
 
 type SortKey = "newest" | "severity";
 
@@ -84,7 +85,7 @@ export function IncidentQueue({
   selectedId,
   onSelect,
 }: {
-  defects: DefectResponse[];
+  defects: DefectResponseWithPriority[];
   selectedId: number | null;
   onSelect: (defect: DefectResponse) => void;
 }) {
@@ -310,6 +311,11 @@ export function IncidentQueue({
                   <p className="text-sm font-semibold text-on-surface">
                     {defectTypeLabel(defect.defect_type)}
                   </p>
+                  {defect.report_count > 1 && (
+                    <p className="mt-0.5 inline-flex items-center rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                      {defect.report_count} reports
+                    </p>
+                  )}
                 </div>
                 <StatusChip tone={statusTone(defect.defect_status)}>
                   {statusLabel(defect.defect_status)}

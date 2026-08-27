@@ -5,13 +5,13 @@ import { SeverityBadge } from "@/components/ui/severity-badge";
 import { defectTypeLabel } from "@/lib/defect-types";
 import { statusTone, statusLabel } from "@/lib/defect-status";
 import { formatDistanceAway } from "@/lib/geo";
-import type { DefectResponse } from "@/lib/api";
+import type { DefectResponse, DefectResponseWithPriority } from "@/lib/api";
 
 export function MyReportCard({
   defect,
   distanceKm,
 }: {
-  defect: DefectResponse;
+  defect: DefectResponse | DefectResponseWithPriority;
   /** Real haversine distance from a searched/current location — see
    * lib/geo.ts. Omitted entirely (not "0 km") when no reference point is
    * set. There is no report creation timestamp anywhere in the current
@@ -31,6 +31,13 @@ export function MyReportCard({
         </div>
         <StatusChip tone={statusTone(defect.defect_status)}>{statusLabel(defect.defect_status)}</StatusChip>
       </div>
+
+      {"canonical_defect_id" in defect && defect.canonical_defect_id != null && (
+        <p className="mt-2 rounded-md bg-surface-container-low px-2 py-1 text-xs text-on-surface-variant">
+          Your report was matched to an existing defect other citizens also
+          reported. It still counts as your observation.
+        </p>
+      )}
 
       <div className="mt-3 flex items-center justify-between">
         <SeverityBadge severity={defect.defect_severity} />

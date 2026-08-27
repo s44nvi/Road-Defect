@@ -4,18 +4,19 @@ import { StatusChip } from "@/components/ui/status-chip";
 import { SeverityBadge } from "@/components/ui/severity-badge";
 import { CloseIcon } from "@/components/icons";
 import { defectTypeLabel } from "@/lib/defect-types";
-import type { DefectResponse } from "@/lib/api";
+import type { DefectResponse, DefectResponseWithPriority } from "@/lib/api";
 
 export function DefectSummaryCard({
   defect,
   onClose,
   detailsHref,
 }: {
-  defect: DefectResponse;
+  defect: DefectResponse | DefectResponseWithPriority;
   onClose: () => void;
   /** Optional "View Incident" link — used by the officer dashboard, unused by citizen /home. */
   detailsHref?: string;
 }) {
+  const reportCount = "report_count" in defect ? defect.report_count : 1;
   return (
     <Card className="w-72 p-4">
       <div className="flex items-start justify-between gap-2">
@@ -36,9 +37,14 @@ export function DefectSummaryCard({
           <CloseIcon className="h-4 w-4" />
         </button>
       </div>
-      <div className="mt-3 flex items-center gap-3">
+      <div className="mt-3 flex flex-wrap items-center gap-2">
         <SeverityBadge severity={defect.defect_severity} />
         <StatusChip>{defect.defect_status}</StatusChip>
+        {reportCount > 1 && (
+          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+            {reportCount} reports
+          </span>
+        )}
       </div>
       <p className="mt-3 text-xs text-on-surface-variant">
         {defect.latitude.toFixed(5)}, {defect.longitude.toFixed(5)}

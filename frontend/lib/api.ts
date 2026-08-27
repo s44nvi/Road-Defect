@@ -16,6 +16,17 @@ export interface DefectResponse {
   longitude: number;
 }
 
+/** Report consolidation ("one physical defect = one municipal record").
+ * `report_count` is how many individual citizen observations back this
+ * physical defect (>= 1). `canonical_defect_id` is set only on a row that
+ * is itself a corroborating observation of another physical defect (used by
+ * the citizen "My Reports" view); null on canonical rows. Both are additive
+ * — mirrors backend/app/schemas.py. */
+export interface ConsolidationFields {
+  report_count: number;
+  canonical_defect_id: number | null;
+}
+
 /** `GET /defects` and `POST /reports` add the AHP priority score on top of
  * DefectResponse. `defect_priority` is null for JSON-only reports (no
  * detection to score) and only populated for defects created through
@@ -23,6 +34,11 @@ export interface DefectResponse {
  * existing call sites that only read the base fields need no changes. */
 export interface DefectResponseWithPriority extends DefectResponse {
   defect_priority: number | null;
+  /** >= 1. Number of citizen observations behind this physical defect. */
+  report_count: number;
+  /** Set only when this row is a corroborating observation of another
+   * physical defect (its own submission, folded into that one). */
+  canonical_defect_id: number | null;
 }
 
 /** The citizen who submitted a defect, as exposed to officers only (see
@@ -37,6 +53,23 @@ export interface ReporterPublic {
  * AI detection metadata, evidence image, and reporter identity. As of
  * backend commit 618fbfe this route is officer-only (it now carries
  * citizen PII via `reporter`) — see fetchDefect() below. */
+/** One individual citizen observation backing a physical defect, in the
+ * officer's corroboration view. Mirrors backend schemas.ContributingReport. */
+export interface ContributingReport {
+  report_id: number;
+  reported_at: string | null;
+  latitude: number;
+  longitude: number;
+  defect_type: string;
+  defect_severity: string;
+  image_url: string | null;
+  ai_confidence: number | null;
+  ai_bbox: [number, number, number, number] | null;
+  ai_severity_score: number | null;
+  ai_model_source: string | null;
+  reporter: ReporterPublic | null;
+}
+
 export interface DefectDetailResponse extends DefectResponse {
   road_segment_id: string | null;
   is_test_data?: boolean;
@@ -49,6 +82,11 @@ export interface DefectDetailResponse extends DefectResponse {
   /** Browser-fetchable URL (served under /uploads/...) — null when the
    * defect has no associated image (e.g. JSON-only reports). */
   image_url: string | null;
+  /** Consolidation: number of citizen observations behind this physical
+   * defect (>= 1), and each of them. `reports[0]` is the canonical row. */
+  report_count: number;
+  canonical_defect_id: number | null;
+  reports: ContributingReport[];
   /** ISO 8601, already converted to Asia/Kolkata by the backend
    * (timezone_utils.to_ist) — still run through lib/format-datetime.ts's
    * formatIST() for display, which works correctly regardless of the
@@ -219,6 +257,8 @@ export interface NearbyIncidentResponse {
   image_url: string | null;
   road_segment_id: string | null;
   nearest_road: string | null;
+  /** Citizen observations behind this physical defect (>= 1). */
+  report_count: number;
 }
 
 export interface NearbyReportsQuery {

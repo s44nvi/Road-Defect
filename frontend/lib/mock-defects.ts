@@ -15,6 +15,8 @@ export const MOCK_DEFECTS: DefectResponseWithPriority[] = [
     latitude: 19.1197,
     longitude: 72.8468,
     defect_priority: null,
+    report_count: 1,
+    canonical_defect_id: null,
   },
   {
     defect_id: -2,
@@ -24,15 +26,19 @@ export const MOCK_DEFECTS: DefectResponseWithPriority[] = [
     latitude: 19.0596,
     longitude: 72.8656,
     defect_priority: null,
+    report_count: 1,
+    canonical_defect_id: null,
   },
   {
     defect_id: -3,
-    defect_type: "manhole",
+    defect_type: "longitudinal_crack",
     defect_status: "reported",
     defect_severity: "low",
     latitude: 18.9633,
     longitude: 72.8306,
     defect_priority: null,
+    report_count: 1,
+    canonical_defect_id: null,
   },
   {
     defect_id: -4,
@@ -42,6 +48,8 @@ export const MOCK_DEFECTS: DefectResponseWithPriority[] = [
     latitude: 19.0176,
     longitude: 72.8298,
     defect_priority: null,
+    report_count: 1,
+    canonical_defect_id: null,
   },
   {
     defect_id: -5,
@@ -51,5 +59,7 @@ export const MOCK_DEFECTS: DefectResponseWithPriority[] = [
     latitude: 19.033,
     longitude: 72.8397,
     defect_priority: null,
+    report_count: 1,
+    canonical_defect_id: null,
   },
 ];

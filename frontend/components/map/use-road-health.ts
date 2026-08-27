@@ -35,11 +35,6 @@ function toRoadHealthSegment(feature: SegmentFeature): RoadHealthSegment {
   };
 }
 
-// Scoped to the 10 real MCGM demo roads via the geometry_source filter.
-// Removing the argument falls back to all segments (OSM + MCGM) — do not
-// remove it without also updating the MCGM map feature.
-const MCGM_SOURCE = "mcgm_demo_csv_v1";
-
 export function useRoadHealth(): RoadHealthState & { reload: () => void } {
   const [state, setState] = useState<RoadHealthState>({ status: "loading" });
   const [reloadToken, setReloadToken] = useState(0);
@@ -48,7 +43,10 @@ export function useRoadHealth(): RoadHealthState & { reload: () => void } {
     let cancelled = false;
     setState({ status: "loading" });
 
-    fetchRoadHealthSegments(MCGM_SOURCE)
+    // No geometry_source filter: render the full Mumbai road-health
+    // network (OSM + dev + MCGM segments), not just the 10 MCGM demo
+    // roads clustered in Khar West.
+    fetchRoadHealthSegments()
       .then((collection) => {
         if (!cancelled) {
           setState({ status: "ready", segments: collection.features.map(toRoadHealthSegment) });
