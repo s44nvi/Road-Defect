@@ -40,13 +40,74 @@ The system treats each observation as evidence. Multiple observations are merged
 - Crew data and repair history may be seeded as clearly labelled synthetic demo data.
 - Exact pothole depth in centimetres is not claimed; severity is an estimated class and score.
 
-## Planned stack
+## Tech Stack
 
-- **Web:** Next.js, TypeScript, Mapbox or Leaflet
+- **Web:** Next.js, TypeScript, React, Mapbox or Leaflet
 - **API:** FastAPI, Pydantic, SQLAlchemy, PostgreSQL/PostGIS
-- **Processing:** Python, YOLO model adapter, OpenCV, Redis-backed job queue
-- **Scheduling:** OR-Tools
-- **Operations:** Docker Compose locally; object storage for evidence clips and images
+- **ML:** Python, YOLO, OpenCV, sensor fusion, temporal tracking
+- **Processing:** Redis-backed job queue for async tasks
+- **Scheduling:** OR-Tools for maintenance prioritization
+- **Operations:** Docker Compose, MinIO for object storage
+- **Database:** PostgreSQL with PostGIS extension
+
+## Setup Instructions
+
+### Prerequisites
+
+- Python 3.9+
+- Node.js 18+
+- PostgreSQL 13+ with PostGIS extension
+- Docker and Docker Compose
+- Git
+
+### Quick Start
+
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/s44nvi/Road-Defect.git
+   cd Road-Defect
+   ```
+
+2. **Install dependencies:**
+   ```bash
+   # Backend
+   cd backend && pip install -r requirements.txt
+   
+   # Frontend
+   cd ../frontend && npm install
+   ```
+
+3. **Set up the database:**
+   ```bash
+   # Start PostgreSQL and PostGIS via Docker Compose
+   docker-compose up -d database
+   
+   # Run migrations
+   python database/init.sql
+   ```
+
+4. **Download ML model weights:**
+   ```bash
+   python scripts/fetch_model_weights.py
+   ```
+
+5. **Start services:**
+   ```bash
+   # In separate terminals:
+   docker-compose up  # Start all services
+   cd backend && python -m uvicorn app.main:app --reload
+   cd frontend && npm run dev
+   ```
+
+6. **Access the dashboard:**
+   - Web UI: `http://localhost:3000`
+   - API Docs: `http://localhost:8000/docs`
+
+### Development Workflow
+
+- **Backend changes:** Restart `uvicorn` after modifications
+- **Frontend changes:** Next.js auto-reloads on save
+- **ML model updates:** Update model weights and re-run `fetch_model_weights.py`
 
 The first release focuses on potholes, cracks, manholes, debris, and waterlogging. Fallen trees and hawkers are supported as future hazard-model extensions after the road-defect workflow is validated.
 
