@@ -59,7 +59,10 @@ def parse_linestring(geometry: object) -> Coordinates:
         if not isinstance(point, (list, tuple)) or len(point) < 2:
             raise InvalidGeometryError(f"invalid coordinate pair: {point!r}")
 
-        lon, lat = float(point[0]), float(point[1])
+        try:
+            lon, lat = float(point[0]), float(point[1])
+        except (TypeError, ValueError) as exc:
+            raise InvalidGeometryError(f"non-numeric coordinate: {point!r}") from exc
 
         if not (-180.0 <= lon <= 180.0) or not (-90.0 <= lat <= 90.0):
             raise InvalidGeometryError(f"coordinate out of range: {point!r}")

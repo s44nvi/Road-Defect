@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from ..dependencies import get_db
 from . import service
+from .geo import InvalidGeometryError
 from .schemas import SegmentDetail, SegmentFeatureCollection
 
 router = APIRouter(prefix="/road-health", tags=["road-health"])
@@ -54,4 +55,10 @@ def get_segment_health(segment_id: str, db: Session = Depends(get_db)) -> dict:
             detail=f"Road segment '{segment_id}' not found",
         )
 
-    return service.build_segment_detail(db, segment)
+    try:
+        return service.build_segment_detail(db, segment)
+    except InvalidGeometryError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Road segment '{segment_id}' has unusable geometry: {exc}",
+        ) from exc

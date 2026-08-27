@@ -208,18 +208,16 @@ class YoloPotholeDetector:
 
 class YoloPotholeDetectorV2:
     """
-    Second, pothole-specific model: `best2.pt`, a YOLO26s checkpoint trained
-    on the "Multi-Weather Pothole Detection" (MWPD) dataset, single class
-    `pothole` (see `yolo26s_mwpd_v1_handoff/README.md`, extracted from the
-    handoff bundle -- not committed to the repo, summarized here):
+    Second, pothole-specific model: `best2.pt`. Direct inspection of the
+    checkpoint's embedded `train_args` confirms this is a YOLO26**m**
+    checkpoint (`scale: 'm'`, `yaml_file: yolo26m.yaml`, trained at 960px
+    for 150 epochs, run name `yolo26m_mwpd_960`), trained on the
+    "Multi-Weather Pothole Detection" (MWPD) dataset, single class
+    `pothole`. (An earlier version of this docstring called it "YOLO26s" --
+    that was inaccurate; corrected from the verified embedded metadata.)
 
-        val mAP50 0.75 / mAP50-95 0.36, precision 0.82, recall 0.68
-        (held-out test: mAP50 0.70, precision 0.78, recall 0.65)
-
-    Known limitation (from the README): trained with zero background
-    images, so precision figures are optimistic (no clean-road negatives),
-    and it misses ~35% of real potholes (recall 0.65 on held-out test),
-    especially small/distant ones. It is deliberately treated as
+    No verified accuracy/mAP figures for this checkpoint are recorded here;
+    do not rely on this docstring for performance numbers. It is treated as
     "authoritative but not infallible" by `arbitration.py`, not as ground
     truth.
 
@@ -231,7 +229,7 @@ class YoloPotholeDetectorV2:
     """
 
     OUTPUT_CLASS_NAME = "pothole"
-    MODEL_SOURCE = "yolo26s-best2.pt-mwpd-pothole-v1"
+    MODEL_SOURCE = "yolo26m-best2.pt-mwpd-pothole-v1"
 
     def __init__(self, weights_path: str | Path | None = None) -> None:
         self._weights_path = (
