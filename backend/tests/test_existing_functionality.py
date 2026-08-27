@@ -108,10 +108,14 @@ def test_get_defects_still_works_and_returns_created_reports(client):
 
     assert isinstance(body, list)
     assert len(body) == 1
+    # GET /defects additively gained `report_count` (consolidation of
+    # duplicate reports into one municipal defect -- see
+    # backend/app/consolidation.py); every other key is unchanged.
     assert set(body[0].keys()) == {
         "defect_id",
         "defect_type",
         "defect_status",
+        "report_count",
         "defect_severity",
         "latitude",
         "longitude",

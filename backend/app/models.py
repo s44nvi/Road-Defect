@@ -123,6 +123,27 @@ class Defect(Base):
         order_by="DefectStatusHistory.changed_at",
     )
 
+    # Duplicate-report consolidation: nullable self-reference to another
+    # `Defect` row representing the same real-world issue. NULL means this
+    # row IS a canonical incident (either the first report of its kind, or
+    # one with no nearby same-type match). Non-NULL means this row is a
+    # duplicate report folded under the referenced canonical defect for
+    # municipal-facing views, while remaining a fully independent row
+    # (own citizen, image, status history). See `app/consolidation.py`
+    # for the matching rule.
+    canonical_defect_id = Column(
+        Integer,
+        ForeignKey("defects.id"),
+        nullable=True,
+        index=True,
+    )
+
+    canonical_defect = relationship(
+        "Defect",
+        remote_side=[id],
+        foreign_keys=[canonical_defect_id],
+    )
+
 
 class Manhole(Base):
     """

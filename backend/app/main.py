@@ -7,6 +7,7 @@ from typing import Callable
 import uuid
 
 from .auth.dependencies import get_current_citizen, get_current_officer
+from .consolidation import find_canonical_match, link_to_canonical, report_count as _consolidated_report_count
 from .auth.schemas import (
     CitizenLoginRequest,
     CitizenLoginResponse,
@@ -37,6 +38,7 @@ from .schemas import (
     AnalyzeImageResponse,
     DefectDetailResponse,
     DefectResponse,
+    DefectListItem,
     DefectResponseWithPriority,
     DefectSeverityUpdate,
     DefectStatusChangeRequest,
@@ -275,6 +277,7 @@ def create_report(
     # timeline at "reported" so the officer view has a complete history.
     road_health_service.assign_defect_to_segment(db, defect)
     record_initial_status(db, defect)
+    link_to_canonical(db, defect)
 
     db.commit()
     db.refresh(defect)
@@ -470,6 +473,12 @@ async def create_report_from_image(
         key=lambda detection: detection.confidence,
     )
 
+    # Recurrence context for AHP priority: how many existing reports of this
+    # same defect type already sit within the consolidation radius. Does not
+    # affect severity (computed purely from the detection) -- only priority.
+    existing_match = find_canonical_match(db, primary.class_name, latitude, longitude)
+    recurrence_count = _consolidated_report_count(db, existing_match) if existing_match else 0
+
     try:
         analysis = road_intelligence_service.analyze(
             AnalyzeRequest(
@@ -477,6 +486,7 @@ async def create_report_from_image(
                 context=RoadContext(
                     latitude=latitude,
                     longitude=longitude,
+                    recurrence_count=recurrence_count,
                 ),
             )
         )
@@ -499,6 +509,7 @@ async def create_report_from_image(
 
     db.add(defect)
     db.flush()
+    link_to_canonical(db, defect)
 
     road_health_service.assign_defect_to_segment(db, defect)
     record_initial_status(db, defect)
@@ -741,6 +752,12 @@ def submit_report(
     ai_model_source = None
     defect_priority = None
 
+    # Recurrence context for AHP priority (see POST /reports/image for the
+    # same pattern) -- based on the citizen's chosen defect_type, since
+    # that's what actually gets persisted below.
+    existing_match = find_canonical_match(db, request.defect_type, request.latitude, request.longitude)
+    recurrence_count = _consolidated_report_count(db, existing_match) if existing_match else 0
+
     if best is not None:
         class_name, confidence, bbox, image_width, image_height, hawker_raw = best
         ai_confidence = confidence
@@ -765,7 +782,11 @@ def submit_report(
                         image_width=image_width,
                         image_height=image_height,
                     ),
-                    context=RoadContext(latitude=request.latitude, longitude=request.longitude),
+                    context=RoadContext(
+                        latitude=request.latitude,
+                        longitude=request.longitude,
+                        recurrence_count=recurrence_count,
+                    ),
                 )
             )
             ai_severity_score = analysis.severity.score
@@ -790,6 +811,7 @@ def submit_report(
 
     db.add(defect)
     db.flush()
+    link_to_canonical(db, defect)
 
     road_health_service.assign_defect_to_segment(db, defect)
     record_initial_status(db, defect)
@@ -802,7 +824,7 @@ def submit_report(
 
 @app.get(
     "/defects",
-    response_model=list[DefectResponseWithPriority],
+    response_model=list[DefectListItem],
 )
 def list_defects(
     db: Session = Depends(get_db),
@@ -810,10 +832,18 @@ def list_defects(
     """
     Officer dashboard endpoint.
 
-    Returns all persisted defects, including development/test rows where
-    applicable.
+    Returns one row per municipal defect: canonical (root) defects only,
+    with duplicate reports of the same real-world issue (see
+    `app/consolidation.py`) folded into `report_count` rather than listed as
+    separate rows. Every individual report row still exists and is
+    independently retrievable (e.g. via `GET /defects/{id}` or
+    `GET /reports/mine`) -- nothing is deleted or merged in the database.
+
+    Includes development/test rows where applicable.
     """
-    defects = db.query(Defect).all()
+    canonical_defects = (
+        db.query(Defect).filter(Defect.canonical_defect_id.is_(None)).all()
+    )
 
     return [
         {
@@ -824,8 +854,9 @@ def list_defects(
             "latitude": defect.latitude,
             "longitude": defect.longitude,
             "defect_priority": defect.defect_priority,
+            "report_count": _consolidated_report_count(db, defect),
         }
-        for defect in defects
+        for defect in canonical_defects
     ]
 
 
@@ -881,10 +912,18 @@ def list_public_issues(db: Session = Depends(get_db)):
     (officer dashboard) for the unfiltered view.
 
     No authentication required -- this is the public read surface.
+
+    Consolidated: only canonical (root) defects are listed as rows --
+    duplicate reports of the same real-world issue (see
+    `app/consolidation.py`) are folded into `observation_count`/
+    `observationCount` instead of appearing as separate map pins.
     """
     defects = (
         db.query(Defect)
-        .filter(Defect.defect_status.in_(_PUBLIC_STATUSES))
+        .filter(
+            Defect.defect_status.in_(_PUBLIC_STATUSES),
+            Defect.canonical_defect_id.is_(None),
+        )
         .order_by(Defect.id.desc())
         .all()
     )
@@ -898,13 +937,13 @@ def list_public_issues(db: Session = Depends(get_db)):
             "latitude": defect.latitude,
             "longitude": defect.longitude,
             "road_segment_id": defect.road_segment.segment_id if defect.road_segment else None,
-            "observation_count": 1,
+            "observation_count": _consolidated_report_count(db, defect),
             "defectId": defect.id,
             "defectType": defect.defect_type,
             "defectStatus": defect.defect_status,
             "defectSeverity": defect.defect_severity,
             "roadSegmentId": defect.road_segment.segment_id if defect.road_segment else None,
-            "observationCount": 1,
+            "observationCount": _consolidated_report_count(db, defect),
         }
         for defect in defects
     ]
@@ -1164,12 +1203,19 @@ async def detect_hawkers(
                 image_width=detection.get("image_width"),
                 image_height=detection.get("image_height"),
             )
+            existing_match = find_canonical_match(
+                db, detection["class_name"], latitude, longitude
+            )
+            recurrence_count = (
+                _consolidated_report_count(db, existing_match) if existing_match else 0
+            )
             analysis = road_intelligence_service.analyze(
                 AnalyzeRequest(
                     detection=detection_input,
                     context=RoadContext(
                         latitude=latitude,
                         longitude=longitude,
+                        recurrence_count=recurrence_count,
                     ),
                 )
             )
@@ -1200,6 +1246,7 @@ async def detect_hawkers(
 
             road_health_service.assign_defect_to_segment(db, defect)
             record_initial_status(db, defect)
+            link_to_canonical(db, defect)
 
             response_items.append((defect, detection, analysis))
 

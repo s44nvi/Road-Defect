@@ -43,6 +43,23 @@ class DefectResponseWithPriority(DefectResponse):
     defect_priority: float | None = None
 
 
+class DefectListItem(DefectResponseWithPriority):
+    """
+    `DefectResponseWithPriority` plus `report_count`, for `GET /defects`
+    only -- kept as a separate schema (rather than added to
+    `DefectResponseWithPriority` itself) so `POST /reports` and
+    `GET /reports/mine`, which share that base schema, keep their exact
+    original response shape.
+
+    `report_count` is the number of individual citizen reports consolidated
+    under this municipal defect (see `app/consolidation.py`). 1 when the
+    defect has no linked duplicates. Aggregation only -- the underlying
+    report rows are never deleted or merged; this just counts them.
+    """
+
+    report_count: int = 1
+
+
 class DefectStatusUpdate(BaseModel):
     """
     Body of the pre-existing `PATCH /defects/{defect_id}` endpoint.
