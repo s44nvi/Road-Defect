@@ -1,32 +1,137 @@
+version: '3.8'
+
 services:
-  postgres:
+  # PostgreSQL with PostGIS for spatial data
+  database:
     image: postgis/postgis:16-3.4
+    container_name: road_defect_db
     environment:
-      POSTGRES_DB: road_defect
-      POSTGRES_USER: road_defect
-      POSTGRES_PASSWORD: road_defect
+      POSTGRES_DB: ${POSTGRES_DB:-road_defect}
+      POSTGRES_USER: ${POSTGRES_USER:-road_defect}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-road_defect}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-road_defect}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - road_defect_network
 
+  # Redis for caching and job queue
   redis:
     image: redis:7-alpine
+    container_name: road_defect_redis
     ports:
       - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - road_defect_network
 
+  # MinIO for S3-compatible object storage
   minio:
     image: minio/minio:latest
+    container_name: road_defect_minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: road-defect
-      MINIO_ROOT_PASSWORD: change-me
+      MINIO_ROOT_USER: ${MINIO_USER:-road-defect}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-change-me-in-production}
     ports:
       - "9000:9000"
       - "9001:9001"
     volumes:
       - object_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    networks:
+      - road_defect_network
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: road_defect_backend
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-road_defect}:${POSTGRES_PASSWORD:-road_defect}@database:5432/${POSTGRES_DB:-road_defect}
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_USER:-road-defect}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD:-change-me-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-your-secret-key-change-in-production}
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:3000}
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - road_defect_network
+
+  # Celery Worker for async jobs (inference, clustering)
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: road_defect_worker
+    command: celery -A app.workers worker --loglevel=info
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-road_defect}:${POSTGRES_PASSWORD:-road_defect}@database:5432/${POSTGRES_DB:-road_defect}
+      REDIS_URL: redis://redis:6379
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_USER:-road-defect}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD:-change-me-in-production}
+    volumes:
+      - ./backend:/app
+    depends_on:
+      - database
+      - redis
+      - backend
+    networks:
+      - road_defect_network
+
+  # Next.js Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    container_name: road_defect_frontend
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      - backend
+    networks:
+      - road_defect_network
 
 volumes:
   postgres_data:
   object_data:
+
+networks:
+  road_defect_network:
+    driver: bridge
