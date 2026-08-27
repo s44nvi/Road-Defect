@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.config import settings
 from app.db import init_db
+from app.api import evidence, defects, verify
 
 # Application startup/shutdown
 @asynccontextmanager
@@ -30,6 +31,8 @@ app = FastAPI(
     version=settings.app_version,
     lifespan=lifespan,
     debug=settings.debug,
+    docs_url="/docs",
+    openapi_url="/openapi.json",
 )
 
 # CORS Configuration
@@ -64,16 +67,22 @@ async def root():
         "environment": settings.environment,
         "docs": "/docs",
         "health": "/health",
+        "api_prefix": settings.api_prefix,
     }
 
 
+# Include API routers
+app.include_router(evidence.router, prefix=settings.api_prefix)
+app.include_router(defects.router, prefix=settings.api_prefix)
+app.include_router(verify.router, prefix=settings.api_prefix)
+
 # TODO: Add routes for:
-# - POST /evidence - Upload observation data
-# - GET /defects - Get defect list with priority queue
-# - GET /defects/{id} - Get defect details
-# - POST /defects/{id}/verify - Officer verification
+# - POST /evidence/bulk - Bulk upload
 # - POST /defects/{id}/repair - Repair scheduling
 # - GET /repairs - Get repair history
+# - Authentication middleware
+# - Rate limiting
+# - Error handling middleware
 
 
 if __name__ == "__main__":
